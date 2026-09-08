@@ -181,6 +181,31 @@ export function buildTopRecurrentClients(records: SuriAttendance[], limit: numbe
     .slice(0, limit);
 }
 
+export type PeriodAttendant = { id: string; name: string; departments: string[] };
+
+/**
+ * Atendentes que de fato aparecem nos atendimentos do período/setores buscados
+ * — substitui a antiga lista "conhecida" sincronizada manualmente: aqui o
+ * filtro de atendente da UI sempre reflete quem realmente atendeu na busca atual.
+ */
+export function buildPeriodAttendants(entries: { deptName: string; records: SuriAttendance[] }[]): PeriodAttendant[] {
+  const byId = new Map<string, { name: string; depts: Set<string> }>();
+  for (const { deptName, records } of entries) {
+    for (const r of records) {
+      if (!r.attendantId) continue;
+      const existing = byId.get(r.attendantId);
+      if (existing) {
+        existing.depts.add(deptName);
+      } else {
+        byId.set(r.attendantId, { name: r.attendantName ?? r.attendantId, depts: new Set([deptName]) });
+      }
+    }
+  }
+  return Array.from(byId.entries())
+    .map(([id, v]) => ({ id, name: v.name, departments: Array.from(v.depts).sort((a, b) => a.localeCompare(b, "pt-BR")) }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+}
+
 export type ReasonCount = { reason: string; count: number };
 
 /** Ranking dos motivos de atendimento (campo "reason") mais frequentes no período filtrado. */

@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSettings, listDepartments } from "@/lib/db";
 import { fetchAttendances, extractChatbotId } from "@/lib/suri";
 import { monthRange, weekRangeForMonday } from "@/lib/weeks";
-import { cleanRecordsForWindow, recordsForDepartment } from "@/lib/metrics";
+import { cleanRecordsForWindow, recordsForDepartment, buildPeriodAttendants } from "@/lib/metrics";
 import { computePercentileStats, buildP90Entries } from "@/lib/percentiles";
+import type { SuriAttendance } from "@/lib/suri";
 
 export const runtime = "nodejs";
 
@@ -41,8 +42,10 @@ export async function GET(req: NextRequest) {
 
     const period = mode === "month" ? monthRange(yearParam, monthParam) : weekRangeForMonday(mondayDate!);
 
+    const recordsByDept: SuriAttendance[][] = [];
+
     const results = await Promise.all(
-      departments.map(async (dept) => {
+      departments.map(async (dept, deptIndex) => {
         const effectiveAttendantIds = personalAttendantIds ?? dept.attendantIds;
         const attendantId =
           effectiveAttendantIds.length === 0 ? undefined : effectiveAttendantIds.length === 1 ? effectiveAttendantIds[0] : effectiveAttendantIds;
@@ -55,6 +58,7 @@ export async function GET(req: NextRequest) {
           useBusinessHours: settings.useBusinessHours,
         });
         const records = recordsForDepartment(cleanRecordsForWindow(recordsRaw, period), dept);
+        recordsByDept[deptIndex] = records;
 
         const tmeOf = (r: (typeof records)[number]) => (r.waitingTime ?? 0) * 60;
         const tmaOf = (r: (typeof records)[number]) => (r.attendanceTime ?? 0) * 60;
@@ -82,10 +86,34 @@ export async function GET(req: NextRequest) {
       })
     );
 
+    // Lista de atendentes pra montar o filtro "Atendente" da UI — reflete quem
+    // de fato atendeu no período/setores buscados, ignorando o filtro pessoal
+    // de atendente já aplicado (senão o usuário nunca conseguiria voltar a
+    // ver/adicionar atendentes que já tirou da seleção).
+    const attendantSourceByDept = personalAttendantIds
+      ? await Promise.all(
+          departments.map(async (dept) => {
+            const deptOnlyAttendantId =
+              dept.attendantIds.length === 0 ? undefined : dept.attendantIds.length === 1 ? dept.attendantIds[0] : dept.attendantIds;
+            const raw = await fetchAttendances(settings.chatbotUrl!, settings.bearerToken!, {
+              dateFrom: period.mondayDate,
+              dateTo: period.saturdayDate,
+              departmentId: dept.departmentId,
+              attendantId: deptOnlyAttendantId,
+              getCurrent: settings.getCurrent,
+              useBusinessHours: settings.useBusinessHours,
+            });
+            return recordsForDepartment(cleanRecordsForWindow(raw, period), dept);
+          })
+        )
+      : recordsByDept;
+    const periodAttendants = buildPeriodAttendants(departments.map((dept, i) => ({ deptName: dept.name, records: attendantSourceByDept[i] })));
+
     return NextResponse.json({
       period: { label: period.label, mondayDate: period.mondayDate, saturdayDate: period.saturdayDate },
       chatbotId: extractChatbotId(settings.chatbotUrl),
       departments: results,
+      periodAttendants,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

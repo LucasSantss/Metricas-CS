@@ -8,6 +8,7 @@ import TopBar from "./TopBar";
 import FilterBar from "./FilterBar";
 import PercentileDeptCard from "./PercentileDeptCard";
 import PercentileDetailModal, { type P90Entry } from "./PercentileDetailModal";
+import type { PeriodAttendantDto } from "@/lib/types";
 
 type Stats = { p50: number | null; p75: number | null; p90: number | null; count: number };
 type GoalStats = { p50: number; p75: number; p90: number };
@@ -22,7 +23,12 @@ type PercentileDept = {
   tmrP90: P90Entry[];
   goals: { tme: GoalStats; tma: GoalStats; tmr: GoalStats };
 };
-type PercentileResponse = { period: { label: string; mondayDate: string; saturdayDate: string }; chatbotId: string | null; departments: PercentileDept[] };
+type PercentileResponse = {
+  period: { label: string; mondayDate: string; saturdayDate: string };
+  chatbotId: string | null;
+  departments: PercentileDept[];
+  periodAttendants: PeriodAttendantDto[];
+};
 
 const METRIC_LABELS: Record<"tme" | "tma" | "tmr", string> = {
   tme: "TME — tempo médio de espera",
@@ -54,10 +60,11 @@ export default function PercentilesView() {
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Falha ao carregar percentis");
         setData(json);
+        f.setPeriodAttendants(json.periodAttendants ?? []);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [f.prefsLoaded, f.configured, f.viewMode, f.weekStart, f.periodQuery, deptIdsKey, attendantIdsKey]);
+  }, [f.prefsLoaded, f.configured, f.viewMode, f.weekStart, f.periodQuery, deptIdsKey, attendantIdsKey, f.setPeriodAttendants]);
 
   return (
     <>
@@ -90,6 +97,7 @@ export default function PercentilesView() {
           weekStart={f.weekStart}
           onWeekStartChange={f.setWeekStart}
           activeDepartments={f.activeDepartments}
+          periodAttendants={f.periodAttendants}
           selectedAttendantIds={f.selectedAttendantIds}
           onAttendantFilterChange={f.updateAttendantFilter}
           selectedDeptIds={f.selectedDeptIds}

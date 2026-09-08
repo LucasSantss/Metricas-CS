@@ -20,8 +20,6 @@ export type AppSettings = {
   connectionLocked: boolean;
 };
 
-export type KnownAttendant = { id: string; name: string };
-
 export type Department = {
   id: number;
   departmentId: string;
@@ -44,8 +42,6 @@ export type Department = {
   goalTmrP90Seconds: number;
   /** subconjunto de attendantId da API Suri; vazio = considera todos os atendentes do setor */
   attendantIds: string[];
-  /** atendentes vistos no histórico de /api/attendances deste setor (id + nome) */
-  knownAttendants: KnownAttendant[];
 };
 
 export async function ensureSchema() {
@@ -76,9 +72,6 @@ export async function ensureSchema() {
   `;
   await sql`
     ALTER TABLE departments ADD COLUMN IF NOT EXISTS attendant_ids TEXT[] NOT NULL DEFAULT '{}'
-  `;
-  await sql`
-    ALTER TABLE departments ADD COLUMN IF NOT EXISTS known_attendants JSONB NOT NULL DEFAULT '[]'
   `;
   await sql`
     ALTER TABLE departments ADD COLUMN IF NOT EXISTS goal_tme_p50_seconds INT NOT NULL DEFAULT 300
@@ -161,16 +154,6 @@ export async function saveSettings(input: {
 }
 
 function mapDepartment(row: any): Department {
-  let knownAttendants: KnownAttendant[] = [];
-  if (Array.isArray(row.known_attendants)) {
-    knownAttendants = row.known_attendants;
-  } else if (typeof row.known_attendants === "string") {
-    try {
-      knownAttendants = JSON.parse(row.known_attendants);
-    } catch {
-      knownAttendants = [];
-    }
-  }
   return {
     id: row.id,
     departmentId: row.department_id,
@@ -191,7 +174,6 @@ function mapDepartment(row: any): Department {
     goalTmrP75Seconds: row.goal_tmr_p75_seconds,
     goalTmrP90Seconds: row.goal_tmr_p90_seconds,
     attendantIds: row.attendant_ids ?? [],
-    knownAttendants,
   };
 }
 
@@ -283,15 +265,4 @@ export async function deleteDepartment(id: number) {
   const sql = getSql();
   await ensureSchema();
   await sql`DELETE FROM departments WHERE id = ${id}`;
-}
-
-/** Substitui a lista de atendentes conhecidos de um setor (não mexe no filtro attendant_ids). */
-export async function setKnownAttendants(departmentId: string, knownAttendants: KnownAttendant[]) {
-  const sql = getSql();
-  await ensureSchema();
-  await sql`
-    UPDATE departments
-    SET known_attendants = ${JSON.stringify(knownAttendants)}::jsonb
-    WHERE department_id = ${departmentId}
-  `;
 }

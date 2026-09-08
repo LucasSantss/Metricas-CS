@@ -55,8 +55,6 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
 
   const [savedFlashId, setSavedFlashId] = useState<number | null>(null);
   const [seeding, setSeeding] = useState(false);
-  const [syncingAttendants, setSyncingAttendants] = useState(false);
-  const [syncSummary, setSyncSummary] = useState<{ name: string; attendantCount: number }[] | null>(null);
 
   useEffect(() => setUseBusinessHours(config?.useBusinessHours ?? false), [config?.useBusinessHours]);
   useEffect(() => setGetCurrent(config?.getCurrent ?? false), [config?.getCurrent]);
@@ -118,27 +116,6 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
     }
   }
 
-  async function syncAttendants() {
-    setSyncingAttendants(true);
-    setError(null);
-    setSyncSummary(null);
-    try {
-      const res = await fetch("/api/departments/sync-attendants", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ days: 60 }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Falha ao sincronizar atendentes");
-      setSyncSummary(json.results);
-      onDepartmentsChanged();
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setSyncingAttendants(false);
-    }
-  }
-
   async function removeDepartment(id: number) {
     setError(null);
     try {
@@ -159,8 +136,6 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Falha ao carregar setores padrão");
       onDepartmentsChanged();
-      // já aproveita e busca os atendentes de cada setor no histórico de atendimentos
-      await syncAttendants();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -191,8 +166,6 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
     });
     setDiscovered((arr) => arr.filter((x) => x.departmentId !== d.departmentId));
     onDepartmentsChanged();
-    // busca os atendentes desse setor recém-adicionado (e dos demais) no histórico
-    await syncAttendants();
   }
 
   return (
@@ -312,7 +285,8 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
         </div>
         <div className="hint">
           A escolha de quais atendentes acompanhar fica no filtro "Atendente" da tela principal — é pessoal, salva só no
-          seu navegador e não afeta o que os outros veem. Aqui embaixo você só atualiza a lista de atendentes conhecidos de cada setor.
+          seu navegador e não afeta o que os outros veem. A lista de opções desse filtro é montada automaticamente a
+          partir de quem realmente atendeu no período e nos setores buscados, sem precisar sincronizar nada aqui.
         </div>
 
         <div className="settings-row">
@@ -322,15 +296,7 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
           <button className="btn" disabled={discovering} onClick={discoverDepartments}>
             {discovering ? "Buscando…" : "Carregar setores da API"}
           </button>
-          <button className="btn" disabled={syncingAttendants} onClick={syncAttendants}>
-            {syncingAttendants ? "Sincronizando…" : "Sincronizar atendentes (últimos 60 dias)"}
-          </button>
         </div>
-        {syncSummary && (
-          <div className="hint">
-            {syncSummary.map((r) => `${r.name}: ${r.attendantCount} atendente(s)`).join(" · ")}
-          </div>
-        )}
 
         {discovered.length > 0 && (
           <div>

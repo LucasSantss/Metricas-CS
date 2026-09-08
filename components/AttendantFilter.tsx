@@ -1,30 +1,23 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DepartmentDto } from "@/lib/types";
+import type { PeriodAttendantDto } from "@/lib/types";
 
 type Props = {
-  departments: DepartmentDto[];
+  attendants: PeriodAttendantDto[];
   selected: string[]; // attendantId[], vazio = todos
   onChange: (ids: string[]) => void;
 };
 
-export default function AttendantFilter({ departments, selected, onChange }: Props) {
+export default function AttendantFilter({ attendants, selected, onChange }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const boxRef = useRef<HTMLDivElement>(null);
 
-  const options = useMemo(() => {
-    const byId = new Map<string, { id: string; name: string; depts: string[] }>();
-    for (const d of departments) {
-      for (const a of d.knownAttendants) {
-        const existing = byId.get(a.id);
-        if (existing) existing.depts.push(d.name);
-        else byId.set(a.id, { id: a.id, name: a.name, depts: [d.name] });
-      }
-    }
-    return Array.from(byId.values()).sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
-  }, [departments]);
+  const options = useMemo(
+    () => [...attendants].sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+    [attendants]
+  );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -79,7 +72,11 @@ export default function AttendantFilter({ departments, selected, onChange }: Pro
             autoFocus
           />
           <div className="attendant-list">
-            {filtered.length === 0 && <div className="hint" style={{ padding: 8 }}>Nenhum atendente encontrado.</div>}
+            {filtered.length === 0 && (
+              <div className="hint" style={{ padding: 8 }}>
+                {options.length === 0 ? "Nenhum atendente nos resultados desta busca ainda." : "Nenhum atendente encontrado."}
+              </div>
+            )}
             {filtered.map((o) => {
               const isOn = selected.includes(o.id);
               return (
@@ -92,7 +89,7 @@ export default function AttendantFilter({ departments, selected, onChange }: Pro
                 >
                   <span className="dept-toggle-check" />
                   <span className="attendant-option-name">{o.name}</span>
-                  <span className="hint">{o.depts.join(", ")}</span>
+                  <span className="hint">{o.departments.join(", ")}</span>
                 </button>
               );
             })}

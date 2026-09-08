@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { ReportResult } from "@/lib/metrics";
+import type { PeriodAttendantDto } from "@/lib/types";
 import { isFresh, readReportCache, writeReportCache } from "@/lib/reportCache";
 import { useFilterState } from "./useFilterState";
 import SettingsPanel from "./SettingsPanel";
@@ -15,7 +16,12 @@ import TopReasons, { type ReasonCount } from "./TopReasons";
 
 type DepartmentRanking = { departmentId: string; name: string; topRecurrentClients: RecurrentClient[]; topReasons: ReasonCount[] };
 type OverallRanking = { topRecurrentClients: RecurrentClient[]; topReasons: ReasonCount[] };
-type ReportWithRankings = ReportResult & { chatbotId: string | null; departmentRankings: DepartmentRanking[]; overallRanking: OverallRanking };
+type ReportWithRankings = ReportResult & {
+  chatbotId: string | null;
+  departmentRankings: DepartmentRanking[];
+  overallRanking: OverallRanking;
+  periodAttendants: PeriodAttendantDto[];
+};
 
 export default function Dashboard() {
   const f = useFilterState();
@@ -47,6 +53,7 @@ export default function Dashboard() {
       if (cached) {
         setReport(cached.report);
         setReportSavedAt(cached.savedAt);
+        f.setPeriodAttendants(cached.report.periodAttendants ?? []);
         if (isFresh(cached.savedAt)) return; // cache ainda fresco, não busca de novo
       }
 
@@ -59,6 +66,7 @@ export default function Dashboard() {
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Falha ao carregar relatório");
         setReport(json);
+        f.setPeriodAttendants(json.periodAttendants ?? []);
         writeReportCache(f.periodKey, f.deptIdsArr, f.attendantIdsArr, json);
         setReportSavedAt(Date.now());
       } catch (e: any) {
@@ -69,7 +77,7 @@ export default function Dashboard() {
         setRefreshing(false);
       }
     },
-    [f.prefsLoaded, f.viewMode, f.weekStart, f.config, f.periodKey, f.periodQuery, f.deptIdsArr, f.attendantIdsArr]
+    [f.prefsLoaded, f.viewMode, f.weekStart, f.config, f.periodKey, f.periodQuery, f.deptIdsArr, f.attendantIdsArr, f.setPeriodAttendants]
   );
 
   useEffect(() => {
@@ -130,6 +138,7 @@ export default function Dashboard() {
           weekStart={f.weekStart}
           onWeekStartChange={f.setWeekStart}
           activeDepartments={f.activeDepartments}
+          periodAttendants={f.periodAttendants}
           selectedAttendantIds={f.selectedAttendantIds}
           onAttendantFilterChange={f.updateAttendantFilter}
           selectedDeptIds={f.selectedDeptIds}

@@ -1,7 +1,7 @@
 "use client";
 
 import type { Dispatch, SetStateAction } from "react";
-import type { DepartmentDto, WeekDto } from "@/lib/types";
+import type { DepartmentDto, PeriodAttendantDto, WeekDto } from "@/lib/types";
 import AttendantFilter from "./AttendantFilter";
 
 const MONTHS = [
@@ -36,6 +36,7 @@ type Props = {
   weekStart: string;
   onWeekStartChange: (weekStart: string) => void;
   activeDepartments: DepartmentDto[];
+  periodAttendants: PeriodAttendantDto[];
   selectedAttendantIds: string[];
   onAttendantFilterChange: (ids: string[]) => void;
   selectedDeptIds: Set<string> | null;
@@ -53,6 +54,7 @@ export default function FilterBar({
   weekStart,
   onWeekStartChange,
   activeDepartments,
+  periodAttendants,
   selectedAttendantIds,
   onAttendantFilterChange,
   selectedDeptIds,
@@ -112,7 +114,7 @@ export default function FilterBar({
         {activeDepartments.length > 0 && (
           <div className="field">
             <label>Atendente</label>
-            <AttendantFilter departments={activeDepartments} selected={selectedAttendantIds} onChange={onAttendantFilterChange} />
+            <AttendantFilter attendants={periodAttendants} selected={selectedAttendantIds} onChange={onAttendantFilterChange} />
           </div>
         )}
       </div>

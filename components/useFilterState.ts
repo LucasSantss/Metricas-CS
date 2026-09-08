@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { ConfigResponse, DepartmentDto, WeekDto } from "@/lib/types";
+import type { ConfigResponse, DepartmentDto, PeriodAttendantDto, WeekDto } from "@/lib/types";
 import { readAttendantFilter, writeAttendantFilter } from "@/lib/attendantFilter";
 import { readDashboardPrefs, writeDashboardPrefs } from "@/lib/dashboardPrefs";
 
@@ -29,6 +29,10 @@ export function useFilterState() {
   const [departments, setDepartments] = useState<DepartmentDto[]>([]);
   const [selectedDeptIds, setSelectedDeptIds] = useState<Set<string> | null>(null); // null = todos
   const [selectedAttendantIds, setSelectedAttendantIds] = useState<string[]>([]);
+  // atendentes que aparecem nos resultados da busca atual — preenchido pela tela
+  // (Dashboard/Percentis) a partir da resposta de /api/report ou /api/percentiles,
+  // que já traz quem de fato atendeu no período/setores filtrados.
+  const [periodAttendants, setPeriodAttendants] = useState<PeriodAttendantDto[]>([]);
 
   const [prefsLoaded, setPrefsLoaded] = useState(false);
 
@@ -162,6 +166,8 @@ export function useFilterState() {
     setSelectedDeptIds,
     selectedAttendantIds,
     updateAttendantFilter,
+    periodAttendants,
+    setPeriodAttendants,
     prefsLoaded,
     periodKey,
     periodQuery,

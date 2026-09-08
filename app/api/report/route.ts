@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSettings, listDepartments } from "@/lib/db";
 import { fetchAttendances, extractChatbotId } from "@/lib/suri";
 import { monthRange, previousMonthRange, previousWeek, weekRangeForMonday } from "@/lib/weeks";
-import { buildReport, cleanRecordsForWindow, recordsForDepartment, buildTopRecurrentClients, buildTopReasons } from "@/lib/metrics";
+import { buildReport, cleanRecordsForWindow, recordsForDepartment, buildTopRecurrentClients, buildTopReasons, buildPeriodAttendants } from "@/lib/metrics";
 
 export const runtime = "nodejs";
 
@@ -108,11 +108,37 @@ export async function GET(req: NextRequest) {
       topReasons: buildTopReasons(allCleaned, RANKING_LIMIT),
     };
 
+    // Lista de atendentes pra montar o filtro "Atendente" da UI: precisa refletir
+    // quem de fato atendeu no período/setores buscados, sem ficar restrita ao
+    // filtro pessoal de atendente já aplicado (senão o usuário nunca conseguiria
+    // voltar a ver/adicionar atendentes que já tirou da seleção). Quando não há
+    // filtro pessoal ativo, os registros já buscados servem sem custo extra;
+    // quando há, refaz a busca por setor ignorando só o filtro pessoal.
+    const attendantSourceByDept = personalAttendantIds
+      ? await Promise.all(
+          departments.map(async (dept) => {
+            const deptOnlyAttendantId =
+              dept.attendantIds.length === 0 ? undefined : dept.attendantIds.length === 1 ? dept.attendantIds[0] : dept.attendantIds;
+            const raw = await fetchAttendances(settings.chatbotUrl!, settings.bearerToken!, {
+              dateFrom: currentWeek.mondayDate,
+              dateTo: currentWeek.saturdayDate,
+              departmentId: dept.departmentId,
+              attendantId: deptOnlyAttendantId,
+              getCurrent: settings.getCurrent,
+              useBusinessHours: settings.useBusinessHours,
+            });
+            return recordsForDepartment(cleanRecordsForWindow(raw, currentWeek), dept);
+          })
+        )
+      : cleanedByDept;
+    const periodAttendants = buildPeriodAttendants(departments.map((dept, i) => ({ deptName: dept.name, records: attendantSourceByDept[i] })));
+
     return NextResponse.json({
       ...report,
       chatbotId: extractChatbotId(settings.chatbotUrl),
       departmentRankings,
       overallRanking,
+      periodAttendants,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

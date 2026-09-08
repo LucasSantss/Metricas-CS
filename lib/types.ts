@@ -26,10 +26,12 @@ export type DepartmentDto = {
   goalTmrP75Seconds: number;
   goalTmrP90Seconds: number;
   attendantIds: string[];
-  knownAttendants: { id: string; name: string }[];
 };
 
 export type WeekDto = { mondayDate: string; saturdayDate: string; label: string; start: string; end: string };
 
 export type SuriDepartmentDto = { id: string; name: string };
 export type SuriAttendantDto = { id: string; name: string; email: string | null };
+
+/** Atendente que aparece nos resultados da busca atual (período + setores filtrados). */
+export type PeriodAttendantDto = { id: string; name: string; departments: string[] };
