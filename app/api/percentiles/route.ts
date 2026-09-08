@@ -68,6 +68,18 @@ export async function GET(req: NextRequest) {
         const tma = computePercentileStats(records.map(tmaOf));
         const tmr = computePercentileStats(records.map(tmrOf));
 
+        const goals = {
+          tme: { p50: dept.goalTmeP50Seconds, p75: dept.goalTmeP75Seconds, p90: dept.goalTmeP90Seconds },
+          tma: { p50: dept.goalTmaP50Seconds, p75: dept.goalTmaP75Seconds, p90: dept.goalTmaP90Seconds },
+          tmr: { p50: dept.goalTmrP50Seconds, p75: dept.goalTmrP75Seconds, p90: dept.goalTmrP90Seconds },
+        };
+
+        // Por definição, 10% dos atendimentos ficam acima do P90 real. Aqui medimos
+        // quantos % ficam acima da META de P90 — se o setor cumprisse a meta à risca,
+        // esse número seria ~10%; bem acima disso evidencia o desvio de meta.
+        const pctAboveGoalP90 = (values: number[], goalP90: number) =>
+          values.length === 0 ? null : (values.filter((v) => v > goalP90).length / values.length) * 100;
+
         return {
           departmentId: dept.departmentId,
           name: dept.name,
@@ -77,10 +89,11 @@ export async function GET(req: NextRequest) {
           tmeP90: buildP90Entries(records, tmeOf, tme.p90),
           tmaP90: buildP90Entries(records, tmaOf, tma.p90),
           tmrP90: buildP90Entries(records, tmrOf, tmr.p90),
-          goals: {
-            tme: { p50: dept.goalTmeP50Seconds, p75: dept.goalTmeP75Seconds, p90: dept.goalTmeP90Seconds },
-            tma: { p50: dept.goalTmaP50Seconds, p75: dept.goalTmaP75Seconds, p90: dept.goalTmaP90Seconds },
-            tmr: { p50: dept.goalTmrP50Seconds, p75: dept.goalTmrP75Seconds, p90: dept.goalTmrP90Seconds },
+          goals,
+          pctAboveGoalP90: {
+            tme: pctAboveGoalP90(records.map(tmeOf), goals.tme.p90),
+            tma: pctAboveGoalP90(records.map(tmaOf), goals.tma.p90),
+            tmr: pctAboveGoalP90(records.map(tmrOf), goals.tmr.p90),
           },
         };
       })

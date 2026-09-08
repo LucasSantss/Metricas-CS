@@ -22,6 +22,7 @@ type PercentileDept = {
   tmaP90: P90Entry[];
   tmrP90: P90Entry[];
   goals: { tme: GoalStats; tma: GoalStats; tmr: GoalStats };
+  pctAboveGoalP90: { tme: number | null; tma: number | null; tmr: number | null };
 };
 type PercentileResponse = {
   period: { label: string; mondayDate: string; saturdayDate: string };
@@ -122,6 +123,7 @@ export default function PercentilesView() {
                 tma={d.tma}
                 tmr={d.tmr}
                 goals={d.goals}
+                pctAboveGoalP90={d.pctAboveGoalP90}
                 onOpenMetric={(metric) => setDetail({ dept: d, metric })}
               />
             ))}
