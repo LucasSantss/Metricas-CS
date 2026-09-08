@@ -16,6 +16,15 @@ export type DepartmentDto = {
   goalTmaSeconds: number;
   goalTmrSeconds: number;
   goalCsat: number;
+  goalTmeP50Seconds: number;
+  goalTmeP75Seconds: number;
+  goalTmeP90Seconds: number;
+  goalTmaP50Seconds: number;
+  goalTmaP75Seconds: number;
+  goalTmaP90Seconds: number;
+  goalTmrP50Seconds: number;
+  goalTmrP75Seconds: number;
+  goalTmrP90Seconds: number;
   attendantIds: string[];
   knownAttendants: { id: string; name: string }[];
 };

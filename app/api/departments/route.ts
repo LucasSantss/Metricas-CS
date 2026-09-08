@@ -27,6 +27,15 @@ export async function POST(req: NextRequest) {
       goalTmaSeconds: typeof body.goalTmaSeconds === "number" ? body.goalTmaSeconds : undefined,
       goalTmrSeconds: typeof body.goalTmrSeconds === "number" ? body.goalTmrSeconds : undefined,
       goalCsat: typeof body.goalCsat === "number" ? body.goalCsat : undefined,
+      goalTmeP50Seconds: typeof body.goalTmeP50Seconds === "number" ? body.goalTmeP50Seconds : undefined,
+      goalTmeP75Seconds: typeof body.goalTmeP75Seconds === "number" ? body.goalTmeP75Seconds : undefined,
+      goalTmeP90Seconds: typeof body.goalTmeP90Seconds === "number" ? body.goalTmeP90Seconds : undefined,
+      goalTmaP50Seconds: typeof body.goalTmaP50Seconds === "number" ? body.goalTmaP50Seconds : undefined,
+      goalTmaP75Seconds: typeof body.goalTmaP75Seconds === "number" ? body.goalTmaP75Seconds : undefined,
+      goalTmaP90Seconds: typeof body.goalTmaP90Seconds === "number" ? body.goalTmaP90Seconds : undefined,
+      goalTmrP50Seconds: typeof body.goalTmrP50Seconds === "number" ? body.goalTmrP50Seconds : undefined,
+      goalTmrP75Seconds: typeof body.goalTmrP75Seconds === "number" ? body.goalTmrP75Seconds : undefined,
+      goalTmrP90Seconds: typeof body.goalTmrP90Seconds === "number" ? body.goalTmrP90Seconds : undefined,
       attendantIds: Array.isArray(body.attendantIds) ? body.attendantIds.map(String) : undefined,
     });
     return NextResponse.json({ department: dept });

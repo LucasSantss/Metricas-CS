@@ -234,6 +234,9 @@ h1{ font-size: 28px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4
   gap: 10px;
   align-items:center;
 }
+.pct-goal-head, .pct-goal-row{ grid-template-columns: minmax(160px, 300px) repeat(3, 88px) auto; }
+.pct-goal-dept-name{ font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pct-goal-table + .pct-goal-table{ margin-top: 4px; }
 
 /* SWITCH (toggle liga/desliga, ex.: ativar setor) */
 .switch{ position: relative; display:inline-block; width: 34px; height: 20px; flex-shrink: 0; }
@@ -435,11 +438,15 @@ h1{ font-size: 28px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4
 .pct-metric-row:hover{ background: var(--panel-2); }
 .pct-metric-label{ font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: .04em; }
 .pct-metric-bars{ display:flex; flex-direction:column; gap: 5px; }
-.pct-bar-line{ display:grid; grid-template-columns: 30px 1fr 62px; align-items:center; gap: 10px; }
+.pct-bar-line{ display:grid; grid-template-columns: 30px 1fr 62px 72px; align-items:center; gap: 10px; }
 .pct-bar-tag{ font-size: 10.5px; font-weight: 700; font-family:'IBM Plex Mono', monospace; }
-.pct-bar-track{ height: 7px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.pct-bar-track{ position: relative; height: 7px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
 .pct-bar-fill{ height: 100%; border-radius: 999px; }
+.pct-bar-goal-mark{ position: absolute; top: -1px; bottom: -1px; width: 2px; background: var(--text); opacity: .55; }
 .pct-bar-value{ font-family:'IBM Plex Mono', monospace; font-size: 12px; color: var(--text); text-align: right; white-space: nowrap; }
+.pct-bar-value.goal-ok{ color: var(--good); }
+.pct-bar-value.goal-bad{ color: var(--bad); }
+.pct-bar-goal{ font-family:'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--text-faint); text-align: right; white-space: nowrap; }
 
 /* Modal de detalhe do P90 — lista de clientes com link pra conversa */
 .p90-list{ display:flex; flex-direction:column; gap: 8px; }
@@ -471,6 +478,7 @@ h1{ font-size: 28px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4
 .ranking-count{ font-family:'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }
 .reason-bar-track{ height: 5px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
 .reason-bar-fill{ height: 100%; border-radius: 999px; background: var(--accent); }
+.ranking-toggle{ margin-top: 10px; width: 100%; text-align: center; }
 
 .error-box{
   border: 1px solid var(--bad);
@@ -560,5 +568,6 @@ footer{ margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); 
   .meta-flag{ justify-content:flex-start; }
   h1{ font-size: 22px; }
   .dept-config-row, .dept-config-head{ grid-template-columns: 1fr; gap:4px; }
+  .pct-goal-head, .pct-goal-row{ grid-template-columns: 1fr; gap:4px; }
   .page-header-row{ flex-direction: column; align-items: flex-start; }
 }

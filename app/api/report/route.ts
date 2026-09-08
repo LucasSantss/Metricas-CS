@@ -90,20 +90,22 @@ export async function GET(req: NextRequest) {
 
     const report = buildReport(departments, currentRecords, previousRecords, currentWeek, prevWeek, extraHistoryWeeksOldToNew);
 
-    // Rankings de recorrência e motivos, calculados separadamente por setor (top 5 cada).
+    // Rankings de recorrência e motivos, calculados separadamente por setor.
+    // Busca top 15 — a UI mostra só os 5 primeiros e expande sob demanda até 15.
+    const RANKING_LIMIT = 15;
     const cleanedByDept = departments.map((dept, i) => recordsForDepartment(cleanRecordsForWindow(perDepartment[i].current, currentWeek), dept));
     const departmentRankings = departments.map((dept, i) => ({
       departmentId: dept.departmentId,
       name: dept.name,
-      topRecurrentClients: buildTopRecurrentClients(cleanedByDept[i], 5),
-      topReasons: buildTopReasons(cleanedByDept[i], 5),
+      topRecurrentClients: buildTopRecurrentClients(cleanedByDept[i], RANKING_LIMIT),
+      topReasons: buildTopReasons(cleanedByDept[i], RANKING_LIMIT),
     }));
 
-    // Compilado dos setores selecionados (soma de todos os departmentRankings), sempre top 5.
+    // Compilado dos setores selecionados (soma de todos os departmentRankings).
     const allCleaned = cleanedByDept.flat();
     const overallRanking = {
-      topRecurrentClients: buildTopRecurrentClients(allCleaned, 5),
-      topReasons: buildTopReasons(allCleaned, 5),
+      topRecurrentClients: buildTopRecurrentClients(allCleaned, RANKING_LIMIT),
+      topReasons: buildTopReasons(allCleaned, RANKING_LIMIT),
     };
 
     return NextResponse.json({

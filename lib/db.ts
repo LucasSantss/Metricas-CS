@@ -32,6 +32,16 @@ export type Department = {
   goalTmaSeconds: number;
   goalTmrSeconds: number;
   goalCsat: number;
+  /** metas de percentil (P50/P75/P90), em segundos — usadas na tela de Percentis operacionais */
+  goalTmeP50Seconds: number;
+  goalTmeP75Seconds: number;
+  goalTmeP90Seconds: number;
+  goalTmaP50Seconds: number;
+  goalTmaP75Seconds: number;
+  goalTmaP90Seconds: number;
+  goalTmrP50Seconds: number;
+  goalTmrP75Seconds: number;
+  goalTmrP90Seconds: number;
   /** subconjunto de attendantId da API Suri; vazio = considera todos os atendentes do setor */
   attendantIds: string[];
   /** atendentes vistos no histórico de /api/attendances deste setor (id + nome) */
@@ -69,6 +79,33 @@ export async function ensureSchema() {
   `;
   await sql`
     ALTER TABLE departments ADD COLUMN IF NOT EXISTS known_attendants JSONB NOT NULL DEFAULT '[]'
+  `;
+  await sql`
+    ALTER TABLE departments ADD COLUMN IF NOT EXISTS goal_tme_p50_seconds INT NOT NULL DEFAULT 300
+  `;
+  await sql`
+    ALTER TABLE departments ADD COLUMN IF NOT EXISTS goal_tme_p75_seconds INT NOT NULL DEFAULT 450
+  `;
+  await sql`
+    ALTER TABLE departments ADD COLUMN IF NOT EXISTS goal_tme_p90_seconds INT NOT NULL DEFAULT 600
+  `;
+  await sql`
+    ALTER TABLE departments ADD COLUMN IF NOT EXISTS goal_tma_p50_seconds INT NOT NULL DEFAULT 3600
+  `;
+  await sql`
+    ALTER TABLE departments ADD COLUMN IF NOT EXISTS goal_tma_p75_seconds INT NOT NULL DEFAULT 5400
+  `;
+  await sql`
+    ALTER TABLE departments ADD COLUMN IF NOT EXISTS goal_tma_p90_seconds INT NOT NULL DEFAULT 7200
+  `;
+  await sql`
+    ALTER TABLE departments ADD COLUMN IF NOT EXISTS goal_tmr_p50_seconds INT NOT NULL DEFAULT 300
+  `;
+  await sql`
+    ALTER TABLE departments ADD COLUMN IF NOT EXISTS goal_tmr_p75_seconds INT NOT NULL DEFAULT 450
+  `;
+  await sql`
+    ALTER TABLE departments ADD COLUMN IF NOT EXISTS goal_tmr_p90_seconds INT NOT NULL DEFAULT 600
   `;
   await sql`
     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS get_current BOOLEAN NOT NULL DEFAULT false
@@ -144,6 +181,15 @@ function mapDepartment(row: any): Department {
     goalTmaSeconds: row.goal_tma_seconds,
     goalTmrSeconds: row.goal_tmr_seconds,
     goalCsat: Number(row.goal_csat),
+    goalTmeP50Seconds: row.goal_tme_p50_seconds,
+    goalTmeP75Seconds: row.goal_tme_p75_seconds,
+    goalTmeP90Seconds: row.goal_tme_p90_seconds,
+    goalTmaP50Seconds: row.goal_tma_p50_seconds,
+    goalTmaP75Seconds: row.goal_tma_p75_seconds,
+    goalTmaP90Seconds: row.goal_tma_p90_seconds,
+    goalTmrP50Seconds: row.goal_tmr_p50_seconds,
+    goalTmrP75Seconds: row.goal_tmr_p75_seconds,
+    goalTmrP90Seconds: row.goal_tmr_p90_seconds,
     attendantIds: row.attendant_ids ?? [],
     knownAttendants,
   };
@@ -165,6 +211,15 @@ export async function upsertDepartment(input: {
   goalTmaSeconds?: number;
   goalTmrSeconds?: number;
   goalCsat?: number;
+  goalTmeP50Seconds?: number;
+  goalTmeP75Seconds?: number;
+  goalTmeP90Seconds?: number;
+  goalTmaP50Seconds?: number;
+  goalTmaP75Seconds?: number;
+  goalTmaP90Seconds?: number;
+  goalTmrP50Seconds?: number;
+  goalTmrP75Seconds?: number;
+  goalTmrP90Seconds?: number;
   attendantIds?: string[];
 }) {
   const sql = getSql();
@@ -175,14 +230,31 @@ export async function upsertDepartment(input: {
   const goalTmaSeconds = input.goalTmaSeconds ?? null;
   const goalTmrSeconds = input.goalTmrSeconds ?? null;
   const goalCsat = input.goalCsat ?? null;
+  const goalTmeP50Seconds = input.goalTmeP50Seconds ?? null;
+  const goalTmeP75Seconds = input.goalTmeP75Seconds ?? null;
+  const goalTmeP90Seconds = input.goalTmeP90Seconds ?? null;
+  const goalTmaP50Seconds = input.goalTmaP50Seconds ?? null;
+  const goalTmaP75Seconds = input.goalTmaP75Seconds ?? null;
+  const goalTmaP90Seconds = input.goalTmaP90Seconds ?? null;
+  const goalTmrP50Seconds = input.goalTmrP50Seconds ?? null;
+  const goalTmrP75Seconds = input.goalTmrP75Seconds ?? null;
+  const goalTmrP90Seconds = input.goalTmrP90Seconds ?? null;
   const attendantIds = input.attendantIds ?? null;
   const rows = await sql`
     INSERT INTO departments (
       department_id, name, active, sort_order,
-      goal_tme_seconds, goal_tma_seconds, goal_tmr_seconds, goal_csat, attendant_ids
+      goal_tme_seconds, goal_tma_seconds, goal_tmr_seconds, goal_csat,
+      goal_tme_p50_seconds, goal_tme_p75_seconds, goal_tme_p90_seconds,
+      goal_tma_p50_seconds, goal_tma_p75_seconds, goal_tma_p90_seconds,
+      goal_tmr_p50_seconds, goal_tmr_p75_seconds, goal_tmr_p90_seconds,
+      attendant_ids
     ) VALUES (
       ${input.departmentId}, ${input.name}, ${active ?? true}, ${sortOrder ?? 0},
-      ${goalTmeSeconds ?? 300}, ${goalTmaSeconds ?? 3600}, ${goalTmrSeconds ?? 300}, ${goalCsat ?? 4.6}, ${attendantIds ?? []}
+      ${goalTmeSeconds ?? 300}, ${goalTmaSeconds ?? 3600}, ${goalTmrSeconds ?? 300}, ${goalCsat ?? 4.6},
+      ${goalTmeP50Seconds ?? 300}, ${goalTmeP75Seconds ?? 450}, ${goalTmeP90Seconds ?? 600},
+      ${goalTmaP50Seconds ?? 3600}, ${goalTmaP75Seconds ?? 5400}, ${goalTmaP90Seconds ?? 7200},
+      ${goalTmrP50Seconds ?? 300}, ${goalTmrP75Seconds ?? 450}, ${goalTmrP90Seconds ?? 600},
+      ${attendantIds ?? []}
     )
     ON CONFLICT (department_id) DO UPDATE SET
       name = EXCLUDED.name,
@@ -192,6 +264,15 @@ export async function upsertDepartment(input: {
       goal_tma_seconds = COALESCE(${goalTmaSeconds}, departments.goal_tma_seconds),
       goal_tmr_seconds = COALESCE(${goalTmrSeconds}, departments.goal_tmr_seconds),
       goal_csat = COALESCE(${goalCsat}, departments.goal_csat),
+      goal_tme_p50_seconds = COALESCE(${goalTmeP50Seconds}, departments.goal_tme_p50_seconds),
+      goal_tme_p75_seconds = COALESCE(${goalTmeP75Seconds}, departments.goal_tme_p75_seconds),
+      goal_tme_p90_seconds = COALESCE(${goalTmeP90Seconds}, departments.goal_tme_p90_seconds),
+      goal_tma_p50_seconds = COALESCE(${goalTmaP50Seconds}, departments.goal_tma_p50_seconds),
+      goal_tma_p75_seconds = COALESCE(${goalTmaP75Seconds}, departments.goal_tma_p75_seconds),
+      goal_tma_p90_seconds = COALESCE(${goalTmaP90Seconds}, departments.goal_tma_p90_seconds),
+      goal_tmr_p50_seconds = COALESCE(${goalTmrP50Seconds}, departments.goal_tmr_p50_seconds),
+      goal_tmr_p75_seconds = COALESCE(${goalTmrP75Seconds}, departments.goal_tmr_p75_seconds),
+      goal_tmr_p90_seconds = COALESCE(${goalTmrP90Seconds}, departments.goal_tmr_p90_seconds),
       attendant_ids = COALESCE(${attendantIds}, departments.attendant_ids)
     RETURNING *
   `;

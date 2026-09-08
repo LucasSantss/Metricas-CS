@@ -73,6 +73,11 @@ export async function GET(req: NextRequest) {
           tmeP90: buildP90Entries(records, tmeOf, tme.p90),
           tmaP90: buildP90Entries(records, tmaOf, tma.p90),
           tmrP90: buildP90Entries(records, tmrOf, tmr.p90),
+          goals: {
+            tme: { p50: dept.goalTmeP50Seconds, p75: dept.goalTmeP75Seconds, p90: dept.goalTmeP90Seconds },
+            tma: { p50: dept.goalTmaP50Seconds, p75: dept.goalTmaP75Seconds, p90: dept.goalTmaP90Seconds },
+            tmr: { p50: dept.goalTmrP50Seconds, p75: dept.goalTmrP75Seconds, p90: dept.goalTmrP90Seconds },
+          },
         };
       })
     );

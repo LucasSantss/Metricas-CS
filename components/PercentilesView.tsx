@@ -10,6 +10,7 @@ import PercentileDeptCard from "./PercentileDeptCard";
 import PercentileDetailModal, { type P90Entry } from "./PercentileDetailModal";
 
 type Stats = { p50: number | null; p75: number | null; p90: number | null; count: number };
+type GoalStats = { p50: number; p75: number; p90: number };
 type PercentileDept = {
   departmentId: string;
   name: string;
@@ -19,6 +20,7 @@ type PercentileDept = {
   tmeP90: P90Entry[];
   tmaP90: P90Entry[];
   tmrP90: P90Entry[];
+  goals: { tme: GoalStats; tma: GoalStats; tmr: GoalStats };
 };
 type PercentileResponse = { period: { label: string; mondayDate: string; saturdayDate: string }; chatbotId: string | null; departments: PercentileDept[] };
 
@@ -111,6 +113,7 @@ export default function PercentilesView() {
                 tme={d.tme}
                 tma={d.tma}
                 tmr={d.tmr}
+                goals={d.goals}
                 onOpenMetric={(metric) => setDetail({ dept: d, metric })}
               />
             ))}

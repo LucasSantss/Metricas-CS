@@ -10,10 +10,37 @@ type Props = {
   onDepartmentsChanged: () => void;
 };
 
-type DraftDept = DepartmentDto & { goalTmeMin: number; goalTmaMin: number; goalTmrMin: number };
+type DraftDept = DepartmentDto & {
+  goalTmeMin: number;
+  goalTmaMin: number;
+  goalTmrMin: number;
+  goalTmeP50Min: number;
+  goalTmeP75Min: number;
+  goalTmeP90Min: number;
+  goalTmaP50Min: number;
+  goalTmaP75Min: number;
+  goalTmaP90Min: number;
+  goalTmrP50Min: number;
+  goalTmrP75Min: number;
+  goalTmrP90Min: number;
+};
 
 function toDraft(d: DepartmentDto): DraftDept {
-  return { ...d, goalTmeMin: d.goalTmeSeconds / 60, goalTmaMin: d.goalTmaSeconds / 60, goalTmrMin: d.goalTmrSeconds / 60 };
+  return {
+    ...d,
+    goalTmeMin: d.goalTmeSeconds / 60,
+    goalTmaMin: d.goalTmaSeconds / 60,
+    goalTmrMin: d.goalTmrSeconds / 60,
+    goalTmeP50Min: d.goalTmeP50Seconds / 60,
+    goalTmeP75Min: d.goalTmeP75Seconds / 60,
+    goalTmeP90Min: d.goalTmeP90Seconds / 60,
+    goalTmaP50Min: d.goalTmaP50Seconds / 60,
+    goalTmaP75Min: d.goalTmaP75Seconds / 60,
+    goalTmaP90Min: d.goalTmaP90Seconds / 60,
+    goalTmrP50Min: d.goalTmrP50Seconds / 60,
+    goalTmrP75Min: d.goalTmrP75Seconds / 60,
+    goalTmrP90Min: d.goalTmrP90Seconds / 60,
+  };
 }
 
 export default function SettingsPanel({ config, departments, onConfigSaved, onDepartmentsChanged }: Props) {
@@ -69,6 +96,15 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
           goalTmaSeconds: Math.round(d.goalTmaMin * 60),
           goalTmrSeconds: Math.round(d.goalTmrMin * 60),
           goalCsat: d.goalCsat,
+          goalTmeP50Seconds: Math.round(d.goalTmeP50Min * 60),
+          goalTmeP75Seconds: Math.round(d.goalTmeP75Min * 60),
+          goalTmeP90Seconds: Math.round(d.goalTmeP90Min * 60),
+          goalTmaP50Seconds: Math.round(d.goalTmaP50Min * 60),
+          goalTmaP75Seconds: Math.round(d.goalTmaP75Min * 60),
+          goalTmaP90Seconds: Math.round(d.goalTmaP90Min * 60),
+          goalTmrP50Seconds: Math.round(d.goalTmrP50Min * 60),
+          goalTmrP75Seconds: Math.round(d.goalTmrP75Min * 60),
+          goalTmrP90Seconds: Math.round(d.goalTmrP90Min * 60),
           attendantIds: d.attendantIds,
         }),
       });
@@ -308,6 +344,74 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
             </div>
           </div>
         )}
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-section-title">
+          Metas de percentis (P50/P75/P90)
+          <span className="hint" style={{ marginLeft: 8, fontWeight: 400 }}>
+            usadas nos painéis da tela "Percentis operacionais"
+          </span>
+        </div>
+        <div className="hint" style={{ marginBottom: -4 }}>
+          Tempo máximo aceitável em cada percentil, por setor. Valores acima da meta aparecem em vermelho nos painéis de percentis; dentro da meta, em verde.
+        </div>
+
+        {(
+          [
+            { title: "TME — tempo médio de espera", p50: "goalTmeP50Min", p75: "goalTmeP75Min", p90: "goalTmeP90Min" },
+            { title: "TMA — tempo médio de atendimento", p50: "goalTmaP50Min", p75: "goalTmaP75Min", p90: "goalTmaP90Min" },
+            { title: "TMR — tempo médio de resposta", p50: "goalTmrP50Min", p75: "goalTmrP75Min", p90: "goalTmrP90Min" },
+          ] as const
+        ).map((metric) => (
+          <div key={metric.title} className="dept-config-table pct-goal-table">
+            <div className="dept-config-head pct-goal-head">
+              <span>{metric.title}</span>
+              <span>P50 (min)</span>
+              <span>P75 (min)</span>
+              <span>P90 (min)</span>
+              <span></span>
+            </div>
+            <div className="dept-list">
+              {drafts.map((d, i) => (
+                <div className="dept-config-row pct-goal-row" key={d.id}>
+                  <span className="pct-goal-dept-name" title={`departmentId: ${d.departmentId}`}>
+                    {d.name}
+                  </span>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={d[metric.p50]}
+                    onChange={(e) => setDrafts((arr) => arr.map((x, j) => (j === i ? { ...x, [metric.p50]: Number(e.target.value) } : x)))}
+                    onBlur={() => saveDepartment(d)}
+                  />
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={d[metric.p75]}
+                    onChange={(e) => setDrafts((arr) => arr.map((x, j) => (j === i ? { ...x, [metric.p75]: Number(e.target.value) } : x)))}
+                    onBlur={() => saveDepartment(d)}
+                  />
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    value={d[metric.p90]}
+                    onChange={(e) => setDrafts((arr) => arr.map((x, j) => (j === i ? { ...x, [metric.p90]: Number(e.target.value) } : x)))}
+                    onBlur={() => saveDepartment(d)}
+                  />
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    {savedFlashId === d.id && <span className="hint" style={{ color: "var(--good)" }}>Salvo ✓</span>}
+                    <button className="btn small" onClick={() => saveDepartment(d)}>Salvar</button>
+                  </div>
+                </div>
+              ))}
+              {drafts.length === 0 && <div className="hint">Nenhum setor cadastrado ainda.</div>}
+            </div>
+          </div>
+        ))}
       </section>
     </div>
   );
