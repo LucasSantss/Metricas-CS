@@ -10,11 +10,16 @@ import TopBar from "./TopBar";
 import DepartmentCard from "./DepartmentCard";
 import WeeklySummary from "./WeeklySummary";
 import FilterBar from "./FilterBar";
+import TopRecurrentClients, { type RecurrentClient } from "./TopRecurrentClients";
+import TopReasons, { type ReasonCount } from "./TopReasons";
+
+type DepartmentRanking = { departmentId: string; name: string; topRecurrentClients: RecurrentClient[]; topReasons: ReasonCount[] };
+type ReportWithRankings = ReportResult & { chatbotId: string | null; departmentRankings: DepartmentRanking[] };
 
 export default function Dashboard() {
   const f = useFilterState();
 
-  const [report, setReport] = useState<ReportResult | null>(null);
+  const [report, setReport] = useState<ReportWithRankings | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +42,7 @@ export default function Dashboard() {
       if (!f.config?.chatbotUrl || !f.config?.hasToken) return;
       setError(null);
 
-      const cached = force ? null : readReportCache(f.periodKey, f.deptIdsArr, f.attendantIdsArr);
+      const cached = force ? null : readReportCache<ReportWithRankings>(f.periodKey, f.deptIdsArr, f.attendantIdsArr);
       if (cached) {
         setReport(cached.report);
         setReportSavedAt(cached.savedAt);
@@ -150,6 +155,16 @@ export default function Dashboard() {
             ))}
 
             <WeeklySummary highlights={report.summary?.highlights ?? []} attention={report.summary?.attention ?? []} />
+
+            {(report.departmentRankings ?? []).map((dr) => (
+              <div key={dr.departmentId} className="rankings-dept-block">
+                <div className="section-title">{dr.name}</div>
+                <div className="rankings-grid">
+                  <TopRecurrentClients title="Clientes recorrentes" clients={dr.topRecurrentClients ?? []} chatbotId={report.chatbotId ?? null} />
+                  <TopReasons title="Motivos de atendimento" reasons={dr.topReasons ?? []} />
+                </div>
+              </div>
+            ))}
 
             <footer>
               Termômetro Operacional do Suporte — comparativo {report.previousWeek.label} vs {report.currentWeek.label}

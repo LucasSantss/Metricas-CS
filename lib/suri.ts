@@ -1,3 +1,8 @@
+export type SuriAttendanceUser = {
+  id: string;
+  name: string | null;
+};
+
 export type SuriAttendance = {
   status: number;
   requestDate: string;
@@ -13,6 +18,8 @@ export type SuriAttendance = {
   avgResponseTime: number;
   protocol: string;
   reason: string | null;
+  /** cliente atendido — usado para montar o link direto da conversa no portal */
+  user: SuriAttendanceUser | null;
 };
 
 export type FetchAttendancesOptions = {
@@ -69,6 +76,13 @@ export async function fetchAttendances(
     throw new Error(`API Suri retornou erro: ${JSON.stringify(json.error)}`);
   }
   return json.data ?? [];
+}
+
+/** Extrai o id do chatbot no portal (ex.: "cb1000019") do chatbotUrl configurado, onde ele sempre aparece isolado. */
+export function extractChatbotId(chatbotUrl: string | null): string | null {
+  if (!chatbotUrl) return null;
+  const match = chatbotUrl.match(/\bcb\d+\b/i);
+  return match ? match[0].toLowerCase() : null;
 }
 
 export type SuriDepartment = { id: string; name: string };

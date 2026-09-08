@@ -7,10 +7,26 @@ import SettingsModal from "./SettingsModal";
 import TopBar from "./TopBar";
 import FilterBar from "./FilterBar";
 import PercentileDeptCard from "./PercentileDeptCard";
+import PercentileDetailModal, { type P90Entry } from "./PercentileDetailModal";
 
 type Stats = { p50: number | null; p75: number | null; p90: number | null; count: number };
-type PercentileDept = { departmentId: string; name: string; tme: Stats; tma: Stats; tmr: Stats };
-type PercentileResponse = { period: { label: string; mondayDate: string; saturdayDate: string }; departments: PercentileDept[] };
+type PercentileDept = {
+  departmentId: string;
+  name: string;
+  tme: Stats;
+  tma: Stats;
+  tmr: Stats;
+  tmeP90: P90Entry[];
+  tmaP90: P90Entry[];
+  tmrP90: P90Entry[];
+};
+type PercentileResponse = { period: { label: string; mondayDate: string; saturdayDate: string }; chatbotId: string | null; departments: PercentileDept[] };
+
+const METRIC_LABELS: Record<"tme" | "tma" | "tmr", string> = {
+  tme: "TME — tempo médio de espera",
+  tma: "TMA — tempo médio de atendimento",
+  tmr: "TMR — tempo médio de resposta",
+};
 
 export default function PercentilesView() {
   const f = useFilterState();
@@ -18,6 +34,7 @@ export default function PercentilesView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [detail, setDetail] = useState<{ dept: PercentileDept; metric: "tme" | "tma" | "tmr" } | null>(null);
 
   const deptIdsKey = f.deptIdsArr?.join(",") ?? "";
   const attendantIdsKey = f.attendantIdsArr?.join(",") ?? "";
@@ -88,12 +105,28 @@ export default function PercentilesView() {
         {data && !loading && (
           <div className="percentile-grid">
             {data.departments.map((d) => (
-              <PercentileDeptCard key={d.departmentId} name={d.name} tme={d.tme} tma={d.tma} tmr={d.tmr} />
+              <PercentileDeptCard
+                key={d.departmentId}
+                name={d.name}
+                tme={d.tme}
+                tma={d.tma}
+                tmr={d.tmr}
+                onOpenMetric={(metric) => setDetail({ dept: d, metric })}
+              />
             ))}
             {data.departments.length === 0 && <div className="hint">Nenhum setor para exibir.</div>}
           </div>
         )}
       </div>
+
+      <PercentileDetailModal
+        open={detail != null}
+        onClose={() => setDetail(null)}
+        metricLabel={detail ? METRIC_LABELS[detail.metric] : ""}
+        deptName={detail?.dept.name ?? ""}
+        entries={detail ? detail.dept[`${detail.metric}P90`] : []}
+        chatbotId={data?.chatbotId ?? null}
+      />
     </>
   );
 }

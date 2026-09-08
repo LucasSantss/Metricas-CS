@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings, listDepartments } from "@/lib/db";
-import { fetchAttendances } from "@/lib/suri";
+import { fetchAttendances, extractChatbotId } from "@/lib/suri";
 import { monthRange, weekRangeForMonday } from "@/lib/weeks";
 import { cleanRecordsForWindow, recordsForDepartment } from "@/lib/metrics";
-import { computePercentileStats } from "@/lib/percentiles";
+import { computePercentileStats, buildP90Entries } from "@/lib/percentiles";
 
 export const runtime = "nodejs";
 
@@ -56,18 +56,30 @@ export async function GET(req: NextRequest) {
         });
         const records = recordsForDepartment(cleanRecordsForWindow(recordsRaw, period), dept);
 
+        const tmeOf = (r: (typeof records)[number]) => (r.waitingTime ?? 0) * 60;
+        const tmaOf = (r: (typeof records)[number]) => (r.attendanceTime ?? 0) * 60;
+        const tmrOf = (r: (typeof records)[number]) => (r.avgResponseTime ?? 0) * 60;
+
+        const tme = computePercentileStats(records.map(tmeOf));
+        const tma = computePercentileStats(records.map(tmaOf));
+        const tmr = computePercentileStats(records.map(tmrOf));
+
         return {
           departmentId: dept.departmentId,
           name: dept.name,
-          tme: computePercentileStats(records.map((r) => (r.waitingTime ?? 0) * 60)),
-          tma: computePercentileStats(records.map((r) => (r.attendanceTime ?? 0) * 60)),
-          tmr: computePercentileStats(records.map((r) => (r.avgResponseTime ?? 0) * 60)),
+          tme,
+          tma,
+          tmr,
+          tmeP90: buildP90Entries(records, tmeOf, tme.p90),
+          tmaP90: buildP90Entries(records, tmaOf, tma.p90),
+          tmrP90: buildP90Entries(records, tmrOf, tmr.p90),
         };
       })
     );
 
     return NextResponse.json({
       period: { label: period.label, mondayDate: period.mondayDate, saturdayDate: period.saturdayDate },
+      chatbotId: extractChatbotId(settings.chatbotUrl),
       departments: results,
     });
   } catch (err: any) {

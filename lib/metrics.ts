@@ -155,6 +155,48 @@ export function cleanRecordsForWindow(recordsRaw: SuriAttendance[], week: WeekRa
   return dedupeByProtocol(filterByWindow(recordsRaw, week)).filter((r) => !isTestAttendance(r));
 }
 
+export type RecurrentClient = { userId: string; userName: string | null; count: number };
+
+/**
+ * Clientes com mais de uma solicitação dentro do período filtrado, ordenados
+ * do mais recorrente pro menos — usados no ranking "clientes recorrentes".
+ */
+export function buildTopRecurrentClients(records: SuriAttendance[], limit: number): RecurrentClient[] {
+  const byUser = new Map<string, { userName: string | null; count: number }>();
+  for (const r of records) {
+    const id = r.user?.id;
+    if (!id) continue;
+    const existing = byUser.get(id);
+    if (existing) {
+      existing.count += 1;
+      if (!existing.userName && r.user?.name) existing.userName = r.user.name;
+    } else {
+      byUser.set(id, { userName: r.user?.name ?? null, count: 1 });
+    }
+  }
+  return Array.from(byUser.entries())
+    .map(([userId, v]) => ({ userId, userName: v.userName, count: v.count }))
+    .filter((c) => c.count > 1)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
+
+export type ReasonCount = { reason: string; count: number };
+
+/** Ranking dos motivos de atendimento (campo "reason") mais frequentes no período filtrado. */
+export function buildTopReasons(records: SuriAttendance[], limit: number): ReasonCount[] {
+  const byReason = new Map<string, number>();
+  for (const r of records) {
+    const reason = (r.reason ?? "").trim();
+    if (!reason) continue;
+    byReason.set(reason, (byReason.get(reason) ?? 0) + 1);
+  }
+  return Array.from(byReason.entries())
+    .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, limit);
+}
+
 function deltaPct(from: number, to: number): number | null {
   if (from === 0) return to === 0 ? 0 : null;
   return ((to - from) / from) * 100;

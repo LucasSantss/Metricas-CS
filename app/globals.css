@@ -426,7 +426,13 @@ h1{ font-size: 28px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4
 .pct-dept-head h2{ font-size: 15px; font-weight: 600; }
 .pct-dept-count{ font-family:'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }
 .pct-dept-body{ padding: 16px 18px; display:flex; flex-direction:column; gap: 18px; }
-.pct-metric-row{ display:flex; flex-direction:column; gap: 7px; }
+.pct-metric-row{
+  display:flex; flex-direction:column; gap: 7px;
+  background: none; border: none; padding: 6px; margin: -6px; border-radius: 8px;
+  text-align: left; font: inherit; color: inherit; cursor: pointer;
+  transition: background .12s ease;
+}
+.pct-metric-row:hover{ background: var(--panel-2); }
 .pct-metric-label{ font-size: 11px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: .04em; }
 .pct-metric-bars{ display:flex; flex-direction:column; gap: 5px; }
 .pct-bar-line{ display:grid; grid-template-columns: 30px 1fr 62px; align-items:center; gap: 10px; }
@@ -434,6 +440,37 @@ h1{ font-size: 28px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4
 .pct-bar-track{ height: 7px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
 .pct-bar-fill{ height: 100%; border-radius: 999px; }
 .pct-bar-value{ font-family:'IBM Plex Mono', monospace; font-size: 12px; color: var(--text); text-align: right; white-space: nowrap; }
+
+/* Modal de detalhe do P90 — lista de clientes com link pra conversa */
+.p90-list{ display:flex; flex-direction:column; gap: 8px; }
+.p90-row{
+  display:grid; grid-template-columns: 1fr 90px auto; align-items:center; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2);
+}
+.p90-row-main{ display:flex; flex-direction:column; gap: 2px; min-width: 0; }
+.p90-user{ font-size: 13px; font-weight: 600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.p90-attendant{ font-size: 11.5px; color: var(--text-dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.p90-value{ font-family:'IBM Plex Mono', monospace; font-size: 12.5px; color: var(--bad); text-align: right; white-space: nowrap; }
+
+/* Rankings ao final do Termômetro Operacional (clientes recorrentes / motivos de atendimento) */
+.rankings-grid{
+  display:grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 16px;
+  margin-top: 24px;
+}
+.ranking-list{ display:flex; flex-direction:column; gap: 8px; }
+.ranking-row{
+  display:grid; grid-template-columns: 22px 1fr auto auto; align-items:center; gap: 10px;
+  padding: 9px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2);
+}
+.ranking-row.reason{ grid-template-columns: 22px 1fr auto; }
+.ranking-rank{ font-family:'IBM Plex Mono', monospace; font-size: 12px; font-weight: 700; color: var(--accent); }
+.ranking-label{ font-size: 13px; font-weight: 600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ranking-label-col{ display:flex; flex-direction:column; gap: 5px; min-width: 0; }
+.ranking-count{ font-family:'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--text-dim); white-space: nowrap; }
+.reason-bar-track{ height: 5px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.reason-bar-fill{ height: 100%; border-radius: 999px; background: var(--accent); }
 
 .error-box{
   border: 1px solid var(--bad);

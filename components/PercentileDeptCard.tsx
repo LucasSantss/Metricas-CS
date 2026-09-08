@@ -1,15 +1,8 @@
 "use client";
 
-type Stats = { p50: number | null; p75: number | null; p90: number | null; count: number };
+import { fmtDuration } from "@/lib/format";
 
-function fmt(seconds: number | null): string {
-  if (seconds == null) return "—";
-  const s = Math.round(seconds);
-  const hh = Math.floor(s / 3600);
-  const mm = Math.floor((s % 3600) / 60);
-  const ss = s % 60;
-  return hh > 0 ? `${hh}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}` : `${mm}:${String(ss).padStart(2, "0")}`;
-}
+type Stats = { p50: number | null; p75: number | null; p90: number | null; count: number };
 
 const SERIES: { key: "p50" | "p75" | "p90"; tag: string; color: string }[] = [
   { key: "p50", tag: "P50", color: "var(--accent)" },
@@ -17,10 +10,10 @@ const SERIES: { key: "p50" | "p75" | "p90"; tag: string; color: string }[] = [
   { key: "p90", tag: "P90", color: "var(--bad)" },
 ];
 
-function MetricBars({ label, stats }: { label: string; stats: Stats }) {
+function MetricBars({ label, stats, onOpenDetail }: { label: string; stats: Stats; onOpenDetail: () => void }) {
   const max = Math.max(1, stats.p90 ?? stats.p75 ?? stats.p50 ?? 1);
   return (
-    <div className="pct-metric-row">
+    <button type="button" className="pct-metric-row" onClick={onOpenDetail} title="Ver atendimentos no P90">
       <div className="pct-metric-label">{label}</div>
       <div className="pct-metric-bars">
         {SERIES.map((s) => {
@@ -34,12 +27,12 @@ function MetricBars({ label, stats }: { label: string; stats: Stats }) {
               <div className="pct-bar-track">
                 <div className="pct-bar-fill" style={{ width: `${width}%`, background: s.color }} />
               </div>
-              <span className="pct-bar-value">{fmt(value)}</span>
+              <span className="pct-bar-value">{fmtDuration(value)}</span>
             </div>
           );
         })}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -48,9 +41,10 @@ type Props = {
   tme: Stats;
   tma: Stats;
   tmr: Stats;
+  onOpenMetric: (metric: "tme" | "tma" | "tmr") => void;
 };
 
-export default function PercentileDeptCard({ name, tme, tma, tmr }: Props) {
+export default function PercentileDeptCard({ name, tme, tma, tmr, onOpenMetric }: Props) {
   return (
     <div className="pct-dept-card">
       <div className="pct-dept-head">
@@ -58,9 +52,9 @@ export default function PercentileDeptCard({ name, tme, tma, tmr }: Props) {
         <span className="pct-dept-count">{tme.count} atendimento{tme.count === 1 ? "" : "s"}</span>
       </div>
       <div className="pct-dept-body">
-        <MetricBars label="TME — tempo médio de espera" stats={tme} />
-        <MetricBars label="TMA — tempo médio de atendimento" stats={tma} />
-        <MetricBars label="TMR — tempo médio de resposta" stats={tmr} />
+        <MetricBars label="TME — tempo médio de espera" stats={tme} onOpenDetail={() => onOpenMetric("tme")} />
+        <MetricBars label="TMA — tempo médio de atendimento" stats={tma} onOpenDetail={() => onOpenMetric("tma")} />
+        <MetricBars label="TMR — tempo médio de resposta" stats={tmr} onOpenDetail={() => onOpenMetric("tmr")} />
       </div>
     </div>
   );

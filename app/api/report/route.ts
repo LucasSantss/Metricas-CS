@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings, listDepartments } from "@/lib/db";
-import { fetchAttendances } from "@/lib/suri";
+import { fetchAttendances, extractChatbotId } from "@/lib/suri";
 import { monthRange, previousMonthRange, previousWeek, weekRangeForMonday } from "@/lib/weeks";
-import { buildReport } from "@/lib/metrics";
+import { buildReport, cleanRecordsForWindow, recordsForDepartment, buildTopRecurrentClients, buildTopReasons } from "@/lib/metrics";
 
 export const runtime = "nodejs";
 
@@ -89,7 +89,23 @@ export async function GET(req: NextRequest) {
     }));
 
     const report = buildReport(departments, currentRecords, previousRecords, currentWeek, prevWeek, extraHistoryWeeksOldToNew);
-    return NextResponse.json(report);
+
+    // Rankings de recorrência e motivos, calculados separadamente por setor (top 5 cada).
+    const departmentRankings = departments.map((dept, i) => {
+      const cleaned = recordsForDepartment(cleanRecordsForWindow(perDepartment[i].current, currentWeek), dept);
+      return {
+        departmentId: dept.departmentId,
+        name: dept.name,
+        topRecurrentClients: buildTopRecurrentClients(cleaned, 5),
+        topReasons: buildTopReasons(cleaned, 5),
+      };
+    });
+
+    return NextResponse.json({
+      ...report,
+      chatbotId: extractChatbotId(settings.chatbotUrl),
+      departmentRankings,
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

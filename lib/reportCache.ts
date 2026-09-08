@@ -3,7 +3,7 @@ import type { ReportResult } from "./metrics";
 const PREFIX = "termo:report:";
 const TTL_MS = 15 * 60 * 1000; // 15 minutos — depois disso o cache é considerado velho
 
-type CacheEntry = { savedAt: number; report: ReportResult };
+type CacheEntry<T> = { savedAt: number; report: T };
 
 function cacheKey(periodKey: string, deptIds: string[] | null, attendantIds: string[] | null): string {
   const ids = deptIds && deptIds.length > 0 ? [...deptIds].sort().join(",") : "all";
@@ -15,16 +15,16 @@ function cacheKey(periodKey: string, deptIds: string[] | null, attendantIds: str
  * Lê o relatório salvo no navegador para esse período (semana "YYYY-MM-DD" ou
  * mês "month:YYYY-MM") + seleção de setores/atendentes, se houver.
  */
-export function readReportCache(
+export function readReportCache<T extends ReportResult = ReportResult>(
   periodKey: string,
   deptIds: string[] | null,
   attendantIds: string[] | null
-): { report: ReportResult; savedAt: number } | null {
+): { report: T; savedAt: number } | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(cacheKey(periodKey, deptIds, attendantIds));
     if (!raw) return null;
-    const entry: CacheEntry = JSON.parse(raw);
+    const entry: CacheEntry<T> = JSON.parse(raw);
     if (!entry?.report || !entry?.savedAt) return null;
     return { report: entry.report, savedAt: entry.savedAt };
   } catch {
@@ -36,10 +36,10 @@ export function isFresh(savedAt: number): boolean {
   return Date.now() - savedAt < TTL_MS;
 }
 
-export function writeReportCache(periodKey: string, deptIds: string[] | null, attendantIds: string[] | null, report: ReportResult) {
+export function writeReportCache<T extends ReportResult>(periodKey: string, deptIds: string[] | null, attendantIds: string[] | null, report: T) {
   if (typeof window === "undefined") return;
   try {
-    const entry: CacheEntry = { savedAt: Date.now(), report };
+    const entry: CacheEntry<T> = { savedAt: Date.now(), report };
     window.localStorage.setItem(cacheKey(periodKey, deptIds, attendantIds), JSON.stringify(entry));
   } catch {
     // localStorage cheio, desabilitado ou navegação privada — ignora silenciosamente
