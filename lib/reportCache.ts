@@ -1,6 +1,9 @@
 import type { ReportResult } from "./metrics";
 
-const PREFIX = "termo:report:";
+// Versionar o prefixo invalida automaticamente qualquer cache salvo por uma
+// versão anterior do app cujo formato do relatório mudou (ex.: campos novos
+// como topRecurrentClients/overallRanking que um cache velho não tem).
+const PREFIX = "termo:report:v2:";
 const TTL_MS = 15 * 60 * 1000; // 15 minutos — depois disso o cache é considerado velho
 
 type CacheEntry<T> = { savedAt: number; report: T };

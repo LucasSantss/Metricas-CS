@@ -91,20 +91,26 @@ export async function GET(req: NextRequest) {
     const report = buildReport(departments, currentRecords, previousRecords, currentWeek, prevWeek, extraHistoryWeeksOldToNew);
 
     // Rankings de recorrência e motivos, calculados separadamente por setor (top 5 cada).
-    const departmentRankings = departments.map((dept, i) => {
-      const cleaned = recordsForDepartment(cleanRecordsForWindow(perDepartment[i].current, currentWeek), dept);
-      return {
-        departmentId: dept.departmentId,
-        name: dept.name,
-        topRecurrentClients: buildTopRecurrentClients(cleaned, 5),
-        topReasons: buildTopReasons(cleaned, 5),
-      };
-    });
+    const cleanedByDept = departments.map((dept, i) => recordsForDepartment(cleanRecordsForWindow(perDepartment[i].current, currentWeek), dept));
+    const departmentRankings = departments.map((dept, i) => ({
+      departmentId: dept.departmentId,
+      name: dept.name,
+      topRecurrentClients: buildTopRecurrentClients(cleanedByDept[i], 5),
+      topReasons: buildTopReasons(cleanedByDept[i], 5),
+    }));
+
+    // Compilado dos setores selecionados (soma de todos os departmentRankings), sempre top 5.
+    const allCleaned = cleanedByDept.flat();
+    const overallRanking = {
+      topRecurrentClients: buildTopRecurrentClients(allCleaned, 5),
+      topReasons: buildTopReasons(allCleaned, 5),
+    };
 
     return NextResponse.json({
       ...report,
       chatbotId: extractChatbotId(settings.chatbotUrl),
       departmentRankings,
+      overallRanking,
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

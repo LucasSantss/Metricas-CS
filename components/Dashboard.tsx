@@ -14,7 +14,8 @@ import TopRecurrentClients, { type RecurrentClient } from "./TopRecurrentClients
 import TopReasons, { type ReasonCount } from "./TopReasons";
 
 type DepartmentRanking = { departmentId: string; name: string; topRecurrentClients: RecurrentClient[]; topReasons: ReasonCount[] };
-type ReportWithRankings = ReportResult & { chatbotId: string | null; departmentRankings: DepartmentRanking[] };
+type OverallRanking = { topRecurrentClients: RecurrentClient[]; topReasons: ReasonCount[] };
+type ReportWithRankings = ReportResult & { chatbotId: string | null; departmentRankings: DepartmentRanking[]; overallRanking: OverallRanking };
 
 export default function Dashboard() {
   const f = useFilterState();
@@ -165,6 +166,20 @@ export default function Dashboard() {
                 </div>
               </div>
             ))}
+
+            {report.overallRanking && (
+              <div className="rankings-dept-block">
+                <div className="section-title">Resultado geral</div>
+                <div className="rankings-grid">
+                  <TopRecurrentClients
+                    title="Clientes recorrentes"
+                    clients={report.overallRanking.topRecurrentClients ?? []}
+                    chatbotId={report.chatbotId ?? null}
+                  />
+                  <TopReasons title="Motivos de atendimento" reasons={report.overallRanking.topReasons ?? []} />
+                </div>
+              </div>
+            )}
 
             <footer>
               Termômetro Operacional do Suporte — comparativo {report.previousWeek.label} vs {report.currentWeek.label}
