@@ -117,6 +117,19 @@ export function recordsForDepartment(records: SuriAttendance[], dept: Department
   });
 }
 
+/**
+ * Filtro de atendente(s) aplicado localmente (em memória). Antes isso era
+ * feito na própria chamada à API Suri, mas o filtro por departmentId/
+ * attendantId no lado da API é ~10-20x mais lento que buscar tudo sem filtro
+ * e filtrar aqui — ver histórico de app/api/report/route.ts.
+ * Lista vazia/ausente = sem filtro (considera todos os atendentes).
+ */
+export function recordsForAttendants(records: SuriAttendance[], attendantIds: string[]): SuriAttendance[] {
+  if (attendantIds.length === 0) return records;
+  const wanted = new Set(attendantIds);
+  return records.filter((r) => r.attendantId != null && wanted.has(r.attendantId));
+}
+
 // "Atendimentos" conta atendimentos SOLICITADOS dentro do período
 // (requestDate) — igual à coluna "Solicitados" do portal.
 function filterByWindow(records: SuriAttendance[], week: WeekRange): SuriAttendance[] {

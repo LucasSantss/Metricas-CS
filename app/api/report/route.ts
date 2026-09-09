@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings, listDepartments } from "@/lib/db";
-import { fetchAttendances, extractChatbotId } from "@/lib/suri";
+import { fetchAttendances, extractChatbotId, type SuriAttendance } from "@/lib/suri";
 import { monthRange, previousMonthRange, previousWeek, weekRangeForMonday } from "@/lib/weeks";
-import { buildReport, cleanRecordsForWindow, recordsForDepartment, buildTopRecurrentClients, buildTopReasons, buildPeriodAttendants } from "@/lib/metrics";
+import {
+  buildReport,
+  cleanRecordsForWindow,
+  recordsForDepartment,
+  recordsForAttendants,
+  buildTopRecurrentClients,
+  buildTopReasons,
+  buildPeriodAttendants,
+} from "@/lib/metrics";
 
 export const runtime = "nodejs";
 
@@ -53,39 +61,35 @@ export async function GET(req: NextRequest) {
           })()
         : [];
 
-    // Busca por setor (filtro departmentId direto na API), uma chamada por
-    // setor ativo, para as semanas envolvidas em paralelo.
-    const perDepartment = await Promise.all(
-      departments.map(async (dept) => {
-        // Filtro pessoal de atendentes (query string, nunca salvo no banco) tem
-        // prioridade; cada pessoa pode escolher os seus sem afetar os demais.
-        // Sem filtro pessoal, cai no filtro de atendentes configurado no setor (se houver).
-        const effectiveAttendantIds = personalAttendantIds ?? dept.attendantIds;
-        const attendantId =
-          effectiveAttendantIds.length === 0 ? undefined : effectiveAttendantIds.length === 1 ? effectiveAttendantIds[0] : effectiveAttendantIds;
-        const fetchFor = (w: { mondayDate: string; saturdayDate: string }) =>
-          fetchAttendances(settings.chatbotUrl!, settings.bearerToken!, {
-            dateFrom: w.mondayDate,
-            dateTo: w.saturdayDate,
-            departmentId: dept.departmentId,
-            attendantId,
-            getCurrent: settings.getCurrent,
-            useBusinessHours: settings.useBusinessHours,
-          });
-        const [current, previous, ...history] = await Promise.all([
-          fetchFor(currentWeek),
-          fetchFor(prevWeek),
-          ...historyWeeksOldToNew.map(fetchFor),
-        ]);
-        return { current, previous, history };
-      })
-    );
+    // Busca sem filtro de setor/atendente na própria API — uma chamada por
+    // semana envolvida, em paralelo. O filtro por departmentId/attendantId no
+    // lado da API Suri é muito mais lento (~10-20x) do que buscar tudo e
+    // filtrar aqui em memória com recordsForDepartment/recordsForAttendants.
+    const fetchWeek = (w: { mondayDate: string; saturdayDate: string }) =>
+      fetchAttendances(settings.chatbotUrl!, settings.bearerToken!, {
+        dateFrom: w.mondayDate,
+        dateTo: w.saturdayDate,
+        getCurrent: settings.getCurrent,
+        useBusinessHours: settings.useBusinessHours,
+      });
 
-    const currentRecords = perDepartment.flatMap((p) => p.current);
-    const previousRecords = perDepartment.flatMap((p) => p.previous);
+    const [currentRecordsRaw, previousRecordsRaw, ...historyRecordsRaw] = await Promise.all([
+      fetchWeek(currentWeek),
+      fetchWeek(prevWeek),
+      ...historyWeeksOldToNew.map(fetchWeek),
+    ]);
+
+    // Filtro pessoal de atendentes (query string, nunca salvo no banco) tem
+    // prioridade; cada pessoa pode escolher os seus sem afetar os demais.
+    // Sem filtro pessoal, cai no filtro de atendentes configurado no setor (se houver).
+    const forDeptAndAttendants = (records: SuriAttendance[], dept: (typeof departments)[number]) =>
+      recordsForAttendants(recordsForDepartment(records, dept), personalAttendantIds ?? dept.attendantIds);
+
+    const currentRecords = departments.flatMap((dept) => forDeptAndAttendants(currentRecordsRaw, dept));
+    const previousRecords = departments.flatMap((dept) => forDeptAndAttendants(previousRecordsRaw, dept));
     const extraHistoryWeeksOldToNew = historyWeeksOldToNew.map((week, i) => ({
       week,
-      records: perDepartment.flatMap((p) => p.history[i] ?? []),
+      records: departments.flatMap((dept) => forDeptAndAttendants(historyRecordsRaw[i] ?? [], dept)),
     }));
 
     const report = buildReport(departments, currentRecords, previousRecords, currentWeek, prevWeek, extraHistoryWeeksOldToNew);
@@ -93,7 +97,10 @@ export async function GET(req: NextRequest) {
     // Rankings de recorrência e motivos, calculados separadamente por setor.
     // Busca top 15 — a UI mostra só os 5 primeiros e expande sob demanda até 15.
     const RANKING_LIMIT = 15;
-    const cleanedByDept = departments.map((dept, i) => recordsForDepartment(cleanRecordsForWindow(perDepartment[i].current, currentWeek), dept));
+    const currentCleanedRaw = cleanRecordsForWindow(currentRecordsRaw, currentWeek);
+    const cleanedByDept = departments.map((dept) =>
+      recordsForAttendants(recordsForDepartment(currentCleanedRaw, dept), personalAttendantIds ?? dept.attendantIds)
+    );
     const departmentRankings = departments.map((dept, i) => ({
       departmentId: dept.departmentId,
       name: dept.name,
@@ -111,26 +118,10 @@ export async function GET(req: NextRequest) {
     // Lista de atendentes pra montar o filtro "Atendente" da UI: precisa refletir
     // quem de fato atendeu no período/setores buscados, sem ficar restrita ao
     // filtro pessoal de atendente já aplicado (senão o usuário nunca conseguiria
-    // voltar a ver/adicionar atendentes que já tirou da seleção). Quando não há
-    // filtro pessoal ativo, os registros já buscados servem sem custo extra;
-    // quando há, refaz a busca por setor ignorando só o filtro pessoal.
-    const attendantSourceByDept = personalAttendantIds
-      ? await Promise.all(
-          departments.map(async (dept) => {
-            const deptOnlyAttendantId =
-              dept.attendantIds.length === 0 ? undefined : dept.attendantIds.length === 1 ? dept.attendantIds[0] : dept.attendantIds;
-            const raw = await fetchAttendances(settings.chatbotUrl!, settings.bearerToken!, {
-              dateFrom: currentWeek.mondayDate,
-              dateTo: currentWeek.saturdayDate,
-              departmentId: dept.departmentId,
-              attendantId: deptOnlyAttendantId,
-              getCurrent: settings.getCurrent,
-              useBusinessHours: settings.useBusinessHours,
-            });
-            return recordsForDepartment(cleanRecordsForWindow(raw, currentWeek), dept);
-          })
-        )
-      : cleanedByDept;
+    // voltar a ver/adicionar atendentes que já tirou da seleção). Como já temos
+    // currentCleanedRaw (sem filtro de atendente pessoal), basta filtrar só por
+    // setor — sem precisar refazer nenhuma busca à API.
+    const attendantSourceByDept = departments.map((dept) => recordsForAttendants(recordsForDepartment(currentCleanedRaw, dept), dept.attendantIds));
     const periodAttendants = buildPeriodAttendants(departments.map((dept, i) => ({ deptName: dept.name, records: attendantSourceByDept[i] })));
 
     return NextResponse.json({

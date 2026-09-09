@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSettings, listDepartments } from "@/lib/db";
 import { fetchAttendances, extractChatbotId } from "@/lib/suri";
 import { monthRange, weekRangeForMonday } from "@/lib/weeks";
-import { cleanRecordsForWindow, recordsForDepartment, buildPeriodAttendants } from "@/lib/metrics";
+import { cleanRecordsForWindow, recordsForDepartment, recordsForAttendants, buildPeriodAttendants } from "@/lib/metrics";
 import { computePercentileStats, buildP90Entries } from "@/lib/percentiles";
 import type { SuriAttendance } from "@/lib/suri";
 
@@ -42,22 +42,24 @@ export async function GET(req: NextRequest) {
 
     const period = mode === "month" ? monthRange(yearParam, monthParam) : weekRangeForMonday(mondayDate!);
 
+    // Busca sem filtro de setor/atendente na própria API — uma única chamada
+    // pro período inteiro. O filtro por departmentId/attendantId no lado da
+    // API Suri é muito mais lento (~10-20x) do que buscar tudo e filtrar aqui
+    // em memória com recordsForDepartment/recordsForAttendants.
+    const recordsRaw = await fetchAttendances(settings.chatbotUrl!, settings.bearerToken!, {
+      dateFrom: period.mondayDate,
+      dateTo: period.saturdayDate,
+      getCurrent: settings.getCurrent,
+      useBusinessHours: settings.useBusinessHours,
+    });
+    const cleanedRaw = cleanRecordsForWindow(recordsRaw, period);
+
     const recordsByDept: SuriAttendance[][] = [];
 
     const results = await Promise.all(
       departments.map(async (dept, deptIndex) => {
         const effectiveAttendantIds = personalAttendantIds ?? dept.attendantIds;
-        const attendantId =
-          effectiveAttendantIds.length === 0 ? undefined : effectiveAttendantIds.length === 1 ? effectiveAttendantIds[0] : effectiveAttendantIds;
-        const recordsRaw = await fetchAttendances(settings.chatbotUrl!, settings.bearerToken!, {
-          dateFrom: period.mondayDate,
-          dateTo: period.saturdayDate,
-          departmentId: dept.departmentId,
-          attendantId,
-          getCurrent: settings.getCurrent,
-          useBusinessHours: settings.useBusinessHours,
-        });
-        const records = recordsForDepartment(cleanRecordsForWindow(recordsRaw, period), dept);
+        const records = recordsForAttendants(recordsForDepartment(cleanedRaw, dept), effectiveAttendantIds);
         recordsByDept[deptIndex] = records;
 
         const tmeOf = (r: (typeof records)[number]) => (r.waitingTime ?? 0) * 60;
@@ -102,23 +104,10 @@ export async function GET(req: NextRequest) {
     // Lista de atendentes pra montar o filtro "Atendente" da UI — reflete quem
     // de fato atendeu no período/setores buscados, ignorando o filtro pessoal
     // de atendente já aplicado (senão o usuário nunca conseguiria voltar a
-    // ver/adicionar atendentes que já tirou da seleção).
+    // ver/adicionar atendentes que já tirou da seleção). Reaproveita cleanedRaw,
+    // sem precisar refazer nenhuma busca à API.
     const attendantSourceByDept = personalAttendantIds
-      ? await Promise.all(
-          departments.map(async (dept) => {
-            const deptOnlyAttendantId =
-              dept.attendantIds.length === 0 ? undefined : dept.attendantIds.length === 1 ? dept.attendantIds[0] : dept.attendantIds;
-            const raw = await fetchAttendances(settings.chatbotUrl!, settings.bearerToken!, {
-              dateFrom: period.mondayDate,
-              dateTo: period.saturdayDate,
-              departmentId: dept.departmentId,
-              attendantId: deptOnlyAttendantId,
-              getCurrent: settings.getCurrent,
-              useBusinessHours: settings.useBusinessHours,
-            });
-            return recordsForDepartment(cleanRecordsForWindow(raw, period), dept);
-          })
-        )
+      ? departments.map((dept) => recordsForAttendants(recordsForDepartment(cleanedRaw, dept), dept.attendantIds))
       : recordsByDept;
     const periodAttendants = buildPeriodAttendants(departments.map((dept, i) => ({ deptName: dept.name, records: attendantSourceByDept[i] })));
 
