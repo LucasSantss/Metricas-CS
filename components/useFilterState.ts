@@ -19,11 +19,18 @@ export function useFilterState() {
   const searchParams = useSearchParams();
 
   const now = useMemo(() => new Date(), []);
+  const todayStr = useMemo(() => {
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }, [now]);
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [weeks, setWeeks] = useState<WeekDto[]>([]);
   const [weekStart, setWeekStart] = useState("");
-  const [viewMode, setViewMode] = useState<"week" | "month">("week");
+  const [dayDate, setDayDate] = useState(todayStr);
+  const [viewMode, setViewMode] = useState<"day" | "week" | "month">("week");
 
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [departments, setDepartments] = useState<DepartmentDto[]>([]);
@@ -58,14 +65,16 @@ export function useFilterState() {
     const spMonth = Number(searchParams.get("month"));
     const spMode = searchParams.get("mode");
     const spWeek = searchParams.get("week");
+    const spDay = searchParams.get("day");
     const spDepts = searchParams.get("depts");
-    const hasUrlState = Boolean(spYear || spMonth || spMode || spWeek || spDepts || searchParams.has("attendants"));
+    const hasUrlState = Boolean(spYear || spMonth || spMode || spWeek || spDay || spDepts || searchParams.has("attendants"));
 
     if (hasUrlState) {
       if (spYear) setYear(spYear);
       if (spMonth) setMonth(spMonth);
-      if (spMode === "week" || spMode === "month") setViewMode(spMode);
+      if (spMode === "week" || spMode === "month" || spMode === "day") setViewMode(spMode);
       if (spWeek) setWeekStart(spWeek);
+      if (spDay) setDayDate(spDay);
       if (spDepts) setSelectedDeptIds(spDepts === "all" ? null : new Set(spDepts.split(",").filter(Boolean)));
       if (searchParams.has("attendants")) {
         const ids = (searchParams.get("attendants") ?? "").split(",").filter(Boolean);
@@ -79,6 +88,7 @@ export function useFilterState() {
       if (prefs.year) setYear(prefs.year);
       if (prefs.month) setMonth(prefs.month);
       if (prefs.weekStart) setWeekStart(prefs.weekStart);
+      if (prefs.dayDate) setDayDate(prefs.dayDate);
       if (prefs.viewMode) setViewMode(prefs.viewMode);
       if (prefs.deptIds !== undefined) setSelectedDeptIds(prefs.deptIds ? new Set(prefs.deptIds) : null);
       setSelectedAttendantIds(readAttendantFilter());
@@ -95,10 +105,11 @@ export function useFilterState() {
       year,
       month,
       weekStart,
+      dayDate,
       viewMode,
       deptIds: selectedDeptIds ? Array.from(selectedDeptIds) : null,
     });
-  }, [prefsLoaded, year, month, weekStart, viewMode, selectedDeptIds]);
+  }, [prefsLoaded, year, month, weekStart, dayDate, viewMode, selectedDeptIds]);
 
   // mantém a URL sincronizada — é isso que torna o link copiável/compartilhável
   useEffect(() => {
@@ -108,10 +119,11 @@ export function useFilterState() {
     params.set("month", String(month));
     params.set("mode", viewMode);
     if (viewMode === "week" && weekStart) params.set("week", weekStart);
+    if (viewMode === "day" && dayDate) params.set("day", dayDate);
     params.set("depts", selectedDeptIds && selectedDeptIds.size > 0 ? Array.from(selectedDeptIds).join(",") : "all");
     params.set("attendants", selectedAttendantIds.join(","));
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  }, [prefsLoaded, year, month, viewMode, weekStart, selectedDeptIds, selectedAttendantIds, pathname, router]);
+  }, [prefsLoaded, year, month, viewMode, weekStart, dayDate, selectedDeptIds, selectedAttendantIds, pathname, router]);
 
   useEffect(() => {
     if (!prefsLoaded || viewMode !== "week") return;
@@ -143,8 +155,14 @@ export function useFilterState() {
   // array novo, disparando outra busca, sem parar).
   const deptIdsArr = useMemo(() => (selectedDeptIds ? Array.from(selectedDeptIds) : null), [selectedDeptIds]);
   const attendantIdsArr = selectedAttendantIds.length > 0 ? selectedAttendantIds : null;
-  const periodKey = viewMode === "month" ? `month:${year}-${String(month).padStart(2, "0")}` : weekStart;
-  const periodQuery = viewMode === "month" ? `mode=month&year=${year}&month=${month}` : `weekStart=${weekStart}`;
+  const periodKey =
+    viewMode === "month" ? `month:${year}-${String(month).padStart(2, "0")}` : viewMode === "day" ? `day:${dayDate}` : weekStart;
+  const periodQuery =
+    viewMode === "month"
+      ? `mode=month&year=${year}&month=${month}`
+      : viewMode === "day"
+      ? `mode=day&date=${dayDate}`
+      : `weekStart=${weekStart}`;
 
   return {
     year,
@@ -154,6 +172,8 @@ export function useFilterState() {
     weeks,
     weekStart,
     setWeekStart,
+    dayDate,
+    setDayDate,
     viewMode,
     setViewMode,
     config,

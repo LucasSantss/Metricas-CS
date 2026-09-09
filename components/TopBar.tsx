@@ -8,9 +8,11 @@ type Props = {
   title: string;
   configured: boolean;
   onOpenSettings: () => void;
+  groupedByDept?: boolean;
+  onToggleGroupedByDept?: () => void;
 };
 
-export default function TopBar({ breadcrumb, title, configured, onOpenSettings }: Props) {
+export default function TopBar({ breadcrumb, title, configured, onOpenSettings, groupedByDept, onToggleGroupedByDept }: Props) {
   const pathname = usePathname();
   const onPercentis = pathname?.startsWith("/percentis");
 
@@ -36,9 +38,15 @@ export default function TopBar({ breadcrumb, title, configured, onOpenSettings }
           <span className={`status-dot ${configured ? "ok" : "bad"}`} style={{ position: "absolute", top: 6, right: 6 }} />
           ⚙️
         </button>
-        <button className="topbar-icon-btn" title="Notificações" disabled>
-          🔔
-        </button>
+        {onToggleGroupedByDept && (
+          <button
+            className={`topbar-icon-btn ${groupedByDept ? "on" : ""}`}
+            title={groupedByDept ? "Ver layout padrão" : "Agrupar clientes recorrentes e motivos por setor"}
+            onClick={onToggleGroupedByDept}
+          >
+            🗂️
+          </button>
+        )}
         <button className="topbar-avatar" title="Perfil (em breve)" disabled>
           <span className="topbar-avatar-circle">?</span>
         </button>

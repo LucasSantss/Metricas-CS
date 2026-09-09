@@ -57,6 +57,7 @@ body{
 }
 .topbar-icon-btn:hover{ border-color: var(--accent); }
 .topbar-icon-btn:disabled{ opacity: .5; cursor: default; }
+.topbar-icon-btn.on{ border-color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--panel-2)); }
 a.topbar-icon-btn{ text-decoration: none; color: var(--text); }
 .topbar-avatar{
   border: none;
@@ -175,7 +176,7 @@ h1{ font-size: 28px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4
 .settings-row{ display:flex; flex-wrap:wrap; gap: 12px; align-items: flex-end; }
 .field{ display:flex; flex-direction:column; gap: 5px; min-width: 140px; }
 .field label{ font-size: 11.5px; color: var(--text-dim); font-weight:500; }
-.field input[type=text], .field input[type=password], .field input[type=number], .field select{
+.field input[type=text], .field input[type=password], .field input[type=number], .field input[type=date], .field select{
   background: var(--panel-2);
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -530,6 +531,19 @@ h1{ font-size: 28px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 4
 .subrow{ background: var(--panel-2); }
 
 .section-title{ font-size: 13px; color: var(--text-dim); font-weight: 600; margin: 40px 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+
+/* Layout "agrupado por setor" — cada setor (metas + rankings) fica isolado
+   num cartão próprio, pra deixar clara a separação entre setores. */
+.dept-group{
+  padding: 22px 22px 26px;
+  margin-bottom: 28px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.dept-group:last-of-type{ margin-bottom: 24px; }
+.dept-group .dept-row{ margin-bottom: 0; }
+.dept-group .rankings-dept-block{ margin-top: 26px; }
+.dept-group .section-title{ margin-top: 0; }
 .callout{ display:flex; gap: 12px; padding: 14px 16px; border-radius: 8px; margin-bottom: 10px; border: 1px solid var(--line); background: var(--panel); font-size: 14px; }
 .callout .dot{ flex-shrink:0; width: 8px; height: 8px; border-radius: 50%; margin-top: 7px; }
 .callout.good .dot{ background: var(--good); }

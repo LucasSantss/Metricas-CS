@@ -116,6 +116,29 @@ export function previousMonthRange(year: number, month: number): WeekRange {
   return monthRange(prevYear, prevMonth);
 }
 
+/** Monta o intervalo de um único dia (00:00 a 23:59:59), horário de Brasília. */
+export function dayRange(dayDateStr: string): WeekRange {
+  const [y, m, d] = dayDateStr.split("-").map(Number);
+  const dayLocal = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
+  const nextDayLocal = new Date(Date.UTC(y, m - 1, d + 1, 0, 0, 0)); // fim exclusivo
+  const dd = String(dayLocal.getUTCDate()).padStart(2, "0");
+  const mm = String(dayLocal.getUTCMonth() + 1).padStart(2, "0");
+  return {
+    mondayDate: dateStr(dayLocal),
+    saturdayDate: dateStr(dayLocal),
+    label: `${dd}/${mm}/${dayLocal.getUTCFullYear()}`,
+    start: toUtc(dayLocal),
+    end: toUtc(nextDayLocal),
+  };
+}
+
+/** Dia anterior ao informado, pra comparação dia a dia. */
+export function previousDayRange(dayDateStr: string): WeekRange {
+  const [y, m, d] = dayDateStr.split("-").map(Number);
+  const prevDayLocal = new Date(Date.UTC(y, m - 1, d - 1, 0, 0, 0));
+  return dayRange(dateStr(prevDayLocal));
+}
+
 /** Converte um timestamp (ISO, UTC) da API em Date, para comparar com os limites da semana. */
 export function parseApiTimestamp(iso: string): Date {
   return new Date(iso);

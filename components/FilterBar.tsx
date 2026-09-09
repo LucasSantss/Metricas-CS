@@ -30,11 +30,13 @@ type Props = {
   onYearChange: (year: number) => void;
   month: number;
   onMonthChange: (month: number) => void;
-  viewMode: "week" | "month";
-  onViewModeChange: (mode: "week" | "month") => void;
+  viewMode: "day" | "week" | "month";
+  onViewModeChange: (mode: "day" | "week" | "month") => void;
   weeks: WeekDto[];
   weekStart: string;
   onWeekStartChange: (weekStart: string) => void;
+  dayDate: string;
+  onDayDateChange: (dayDate: string) => void;
   activeDepartments: DepartmentDto[];
   periodAttendants: PeriodAttendantDto[];
   selectedAttendantIds: string[];
@@ -53,6 +55,8 @@ export default function FilterBar({
   weeks,
   weekStart,
   onWeekStartChange,
+  dayDate,
+  onDayDateChange,
   activeDepartments,
   periodAttendants,
   selectedAttendantIds,
@@ -78,19 +82,24 @@ export default function FilterBar({
           <label>Ano</label>
           <input type="number" className="field-year" value={year} onChange={(e) => onYearChange(Number(e.target.value))} />
         </div>
-        <div className="field">
-          <label>Mês</label>
-          <select value={month} onChange={(e) => onMonthChange(Number(e.target.value))}>
-            {MONTHS.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.label}
-              </option>
-            ))}
-          </select>
-        </div>
+        {viewMode !== "day" && (
+          <div className="field">
+            <label>Mês</label>
+            <select value={month} onChange={(e) => onMonthChange(Number(e.target.value))}>
+              {MONTHS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div className="field">
           <label>Período</label>
           <div className="view-mode-toggle">
+            <button type="button" className={viewMode === "day" ? "on" : ""} onClick={() => onViewModeChange("day")}>
+              Dia
+            </button>
             <button type="button" className={viewMode === "week" ? "on" : ""} onClick={() => onViewModeChange("week")}>
               Semana
             </button>
@@ -109,6 +118,12 @@ export default function FilterBar({
                 </option>
               ))}
             </select>
+          </div>
+        )}
+        {viewMode === "day" && (
+          <div className="field">
+            <label>Dia (comparado ao anterior)</label>
+            <input type="date" value={dayDate} onChange={(e) => onDayDateChange(e.target.value)} />
           </div>
         )}
         {activeDepartments.length > 0 && (

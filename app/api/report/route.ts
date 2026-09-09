@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings, listDepartments } from "@/lib/db";
 import { fetchAttendances, extractChatbotId, type SuriAttendance } from "@/lib/suri";
-import { monthRange, previousMonthRange, previousWeek, weekRangeForMonday } from "@/lib/weeks";
+import { dayRange, monthRange, previousDayRange, previousMonthRange, previousWeek, weekRangeForMonday } from "@/lib/weeks";
 import {
   buildReport,
   cleanRecordsForWindow,
@@ -16,8 +16,10 @@ export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
   try {
-    const mode = req.nextUrl.searchParams.get("mode") === "month" ? "month" : "week";
+    const modeParam = req.nextUrl.searchParams.get("mode");
+    const mode = modeParam === "month" ? "month" : modeParam === "day" ? "day" : "week";
     const mondayDate = req.nextUrl.searchParams.get("weekStart");
+    const dayParam = req.nextUrl.searchParams.get("date");
     const yearParam = Number(req.nextUrl.searchParams.get("year"));
     const monthParam = Number(req.nextUrl.searchParams.get("month"));
     const departmentIdsParam = req.nextUrl.searchParams.get("departmentIds"); // opcional, csv
@@ -26,6 +28,9 @@ export async function GET(req: NextRequest) {
 
     if (mode === "week" && !mondayDate) {
       return NextResponse.json({ error: "weekStart (YYYY-MM-DD, uma segunda-feira) é obrigatório" }, { status: 400 });
+    }
+    if (mode === "day" && !dayParam) {
+      return NextResponse.json({ error: "date (YYYY-MM-DD) é obrigatório no modo diário" }, { status: 400 });
     }
     if (mode === "month" && (!yearParam || !monthParam || monthParam < 1 || monthParam > 12)) {
       return NextResponse.json({ error: "year e month (1-12) são obrigatórios no modo mensal" }, { status: 400 });
@@ -46,8 +51,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Nenhum setor ativo configurado. Adicione setores na sessão de ajustes." }, { status: 400 });
     }
 
-    const currentWeek = mode === "month" ? monthRange(yearParam, monthParam) : weekRangeForMonday(mondayDate!);
-    const prevWeek = mode === "month" ? previousMonthRange(yearParam, monthParam) : previousWeek(mondayDate!);
+    const currentWeek =
+      mode === "month" ? monthRange(yearParam, monthParam) : mode === "day" ? dayRange(dayParam!) : weekRangeForMonday(mondayDate!);
+    const prevWeek =
+      mode === "month" ? previousMonthRange(yearParam, monthParam) : mode === "day" ? previousDayRange(dayParam!) : previousWeek(mondayDate!);
 
     // Só no modo semanal: mais 2 semanas pra trás de "prevWeek", usadas
     // exclusivamente pra detectar streaks de 3+ semanas fora da meta. O

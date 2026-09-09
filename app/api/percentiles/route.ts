@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings, listDepartments } from "@/lib/db";
 import { fetchAttendances, extractChatbotId } from "@/lib/suri";
-import { monthRange, weekRangeForMonday } from "@/lib/weeks";
+import { dayRange, monthRange, weekRangeForMonday } from "@/lib/weeks";
 import { cleanRecordsForWindow, recordsForDepartment, recordsForAttendants, buildPeriodAttendants } from "@/lib/metrics";
 import { computePercentileStats, buildP90Entries } from "@/lib/percentiles";
 import type { SuriAttendance } from "@/lib/suri";
@@ -10,8 +10,10 @@ export const runtime = "nodejs";
 
 export async function GET(req: NextRequest) {
   try {
-    const mode = req.nextUrl.searchParams.get("mode") === "month" ? "month" : "week";
+    const modeParam = req.nextUrl.searchParams.get("mode");
+    const mode = modeParam === "month" ? "month" : modeParam === "day" ? "day" : "week";
     const mondayDate = req.nextUrl.searchParams.get("weekStart");
+    const dayParam = req.nextUrl.searchParams.get("date");
     const yearParam = Number(req.nextUrl.searchParams.get("year"));
     const monthParam = Number(req.nextUrl.searchParams.get("month"));
     const departmentIdsParam = req.nextUrl.searchParams.get("departmentIds");
@@ -20,6 +22,9 @@ export async function GET(req: NextRequest) {
 
     if (mode === "week" && !mondayDate) {
       return NextResponse.json({ error: "weekStart (YYYY-MM-DD, uma segunda-feira) é obrigatório" }, { status: 400 });
+    }
+    if (mode === "day" && !dayParam) {
+      return NextResponse.json({ error: "date (YYYY-MM-DD) é obrigatório no modo diário" }, { status: 400 });
     }
     if (mode === "month" && (!yearParam || !monthParam || monthParam < 1 || monthParam > 12)) {
       return NextResponse.json({ error: "year e month (1-12) são obrigatórios no modo mensal" }, { status: 400 });
@@ -40,7 +45,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Nenhum setor ativo configurado. Adicione setores na sessão de ajustes." }, { status: 400 });
     }
 
-    const period = mode === "month" ? monthRange(yearParam, monthParam) : weekRangeForMonday(mondayDate!);
+    const period = mode === "month" ? monthRange(yearParam, monthParam) : mode === "day" ? dayRange(dayParam!) : weekRangeForMonday(mondayDate!);
 
     // Busca sem filtro de setor/atendente na própria API — uma única chamada
     // pro período inteiro. O filtro por departmentId/attendantId no lado da

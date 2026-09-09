@@ -51,6 +51,7 @@ export default function PercentilesView() {
   useEffect(() => {
     if (!f.prefsLoaded || !f.configured) return;
     if (f.viewMode === "week" && !f.weekStart) return;
+    if (f.viewMode === "day" && !f.dayDate) return;
 
     setError(null);
     setLoading(true);
@@ -65,7 +66,7 @@ export default function PercentilesView() {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
-  }, [f.prefsLoaded, f.configured, f.viewMode, f.weekStart, f.periodQuery, deptIdsKey, attendantIdsKey, f.setPeriodAttendants]);
+  }, [f.prefsLoaded, f.configured, f.viewMode, f.weekStart, f.dayDate, f.periodQuery, deptIdsKey, attendantIdsKey, f.setPeriodAttendants]);
 
   return (
     <>
@@ -97,6 +98,8 @@ export default function PercentilesView() {
           weeks={f.weeks}
           weekStart={f.weekStart}
           onWeekStartChange={f.setWeekStart}
+          dayDate={f.dayDate}
+          onDayDateChange={f.setDayDate}
           activeDepartments={f.activeDepartments}
           periodAttendants={f.periodAttendants}
           selectedAttendantIds={f.selectedAttendantIds}

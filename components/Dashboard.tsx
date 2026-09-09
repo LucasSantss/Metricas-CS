@@ -23,6 +23,8 @@ type ReportWithRankings = ReportResult & {
   periodAttendants: PeriodAttendantDto[];
 };
 
+const GROUPED_LAYOUT_KEY = "termo:groupedByDept";
+
 export default function Dashboard() {
   const f = useFilterState();
 
@@ -35,6 +37,29 @@ export default function Dashboard() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // "agrupado por setor" — layout alternativo onde clientes recorrentes/motivos
+  // de atendimento aparecem logo abaixo do card de cada setor, em vez de num
+  // bloco único no fim da página. Preferência só do navegador (não vai pro link).
+  const [groupedByDept, setGroupedByDept] = useState(false);
+  useEffect(() => {
+    try {
+      setGroupedByDept(window.localStorage.getItem(GROUPED_LAYOUT_KEY) === "1");
+    } catch {
+      // localStorage indisponível — mantém o padrão
+    }
+  }, []);
+  const toggleGroupedByDept = useCallback(() => {
+    setGroupedByDept((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(GROUPED_LAYOUT_KEY, next ? "1" : "0");
+      } catch {
+        // ignora
+      }
+      return next;
+    });
+  }, []);
+
   const [checkedInitialConfig, setCheckedInitialConfig] = useState(false);
   useEffect(() => {
     if (!f.config || checkedInitialConfig) return;
@@ -46,6 +71,7 @@ export default function Dashboard() {
     async (force = false) => {
       if (!f.prefsLoaded) return;
       if (f.viewMode === "week" && !f.weekStart) return;
+      if (f.viewMode === "day" && !f.dayDate) return;
       if (!f.config?.chatbotUrl || !f.config?.hasToken) return;
       setError(null);
 
@@ -77,7 +103,7 @@ export default function Dashboard() {
         setRefreshing(false);
       }
     },
-    [f.prefsLoaded, f.viewMode, f.weekStart, f.config, f.periodKey, f.periodQuery, f.deptIdsArr, f.attendantIdsArr, f.setPeriodAttendants]
+    [f.prefsLoaded, f.viewMode, f.weekStart, f.dayDate, f.config, f.periodKey, f.periodQuery, f.deptIdsArr, f.attendantIdsArr, f.setPeriodAttendants]
   );
 
   useEffect(() => {
@@ -101,6 +127,8 @@ export default function Dashboard() {
         title="Termômetro Operacional"
         configured={f.configured}
         onOpenSettings={() => setSettingsOpen(true)}
+        groupedByDept={groupedByDept}
+        onToggleGroupedByDept={toggleGroupedByDept}
       />
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)}>
@@ -137,6 +165,8 @@ export default function Dashboard() {
           weeks={f.weeks}
           weekStart={f.weekStart}
           onWeekStartChange={f.setWeekStart}
+          dayDate={f.dayDate}
+          onDayDateChange={f.setDayDate}
           activeDepartments={f.activeDepartments}
           periodAttendants={f.periodAttendants}
           selectedAttendantIds={f.selectedAttendantIds}
@@ -155,26 +185,44 @@ export default function Dashboard() {
 
         {report && !loading && (
           <>
-            {report.departments.map((d) => (
-              <DepartmentCard
-                key={d.departmentId}
-                report={d}
-                highlights={report.highlights.filter((h) => h.departmentId === d.departmentId)}
-                attention={report.attention.filter((a) => a.departmentId === d.departmentId)}
-              />
-            ))}
+            {report.departments.map((d) => {
+              const dr = (report.departmentRankings ?? []).find((r) => r.departmentId === d.departmentId);
+              return (
+                <div key={d.departmentId} className={groupedByDept ? "dept-group" : undefined}>
+                  <DepartmentCard
+                    report={d}
+                    highlights={report.highlights.filter((h) => h.departmentId === d.departmentId)}
+                    attention={report.attention.filter((a) => a.departmentId === d.departmentId)}
+                  />
+                  {groupedByDept && dr && (
+                    <div className="rankings-dept-block">
+                      <div className="section-title">{dr.name}</div>
+                      <div className="rankings-grid">
+                        <TopRecurrentClients
+                          title="Clientes recorrentes"
+                          clients={dr.topRecurrentClients ?? []}
+                          chatbotId={report.chatbotId ?? null}
+                        />
+                        <TopReasons title="Motivos de atendimento" reasons={dr.topReasons ?? []} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
 
             <WeeklySummary highlights={report.summary?.highlights ?? []} attention={report.summary?.attention ?? []} />
 
-            {(report.departmentRankings ?? []).map((dr) => (
-              <div key={dr.departmentId} className="rankings-dept-block">
-                <div className="section-title">{dr.name}</div>
-                <div className="rankings-grid">
-                  <TopRecurrentClients title="Clientes recorrentes" clients={dr.topRecurrentClients ?? []} chatbotId={report.chatbotId ?? null} />
-                  <TopReasons title="Motivos de atendimento" reasons={dr.topReasons ?? []} />
+            {!groupedByDept &&
+              (report.departmentRankings ?? []).map((dr) => (
+                <div key={dr.departmentId} className="rankings-dept-block">
+                  <div className="section-title">{dr.name}</div>
+                  <div className="rankings-grid">
+                    <TopRecurrentClients title="Clientes recorrentes" clients={dr.topRecurrentClients ?? []} chatbotId={report.chatbotId ?? null} />
+                    <TopReasons title="Motivos de atendimento" reasons={dr.topReasons ?? []} />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
 
             {report.overallRanking && (
               <div className="rankings-dept-block">

@@ -8,8 +8,9 @@ export type DashboardPrefs = {
   year?: number;
   month?: number;
   weekStart?: string;
-  /** "week" = comparar semana atual x anterior; "month" = mês inteiro atual x anterior */
-  viewMode?: "week" | "month";
+  dayDate?: string;
+  /** "day" = comparar dia atual x anterior; "week" = comparar semana atual x anterior; "month" = mês inteiro atual x anterior */
+  viewMode?: "day" | "week" | "month";
   /** null = todos os setores; array = ids selecionados */
   deptIds?: string[] | null;
 };
