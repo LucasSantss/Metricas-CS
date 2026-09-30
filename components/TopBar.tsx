@@ -3,6 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+const NAV = [
+  { href: "/", icon: "📋", title: "Termômetro operacional" },
+  { href: "/percentis", icon: "📊", title: "Percentis (P50/P75/P90)" },
+  { href: "/tickets", icon: "🎫", title: "Painel de tickets" },
+];
+
 type Props = {
   breadcrumb: string;
   title: string;
@@ -13,8 +19,7 @@ type Props = {
 };
 
 export default function TopBar({ breadcrumb, title, configured, onOpenSettings, groupedByDept, onToggleGroupedByDept }: Props) {
-  const pathname = usePathname();
-  const onPercentis = pathname?.startsWith("/percentis");
+  const pathname = usePathname() ?? "/";
 
   return (
     <div className="topbar">
@@ -23,13 +28,14 @@ export default function TopBar({ breadcrumb, title, configured, onOpenSettings, 
         <div className="topbar-title">{title}</div>
       </div>
       <div className="topbar-right">
-        <Link
-          href={onPercentis ? "/" : "/percentis"}
-          className="topbar-icon-btn"
-          title={onPercentis ? "Voltar ao relatório" : "Ver percentis (P50/P75/P90)"}
-        >
-          {onPercentis ? "📋" : "📊"}
-        </Link>
+        {NAV.map((n) => {
+          const on = n.href === "/" ? pathname === "/" : pathname.startsWith(n.href);
+          return (
+            <Link key={n.href} href={n.href} className={`topbar-icon-btn ${on ? "on" : ""}`} title={n.title} aria-current={on ? "page" : undefined}>
+              {n.icon}
+            </Link>
+          );
+        })}
         <button
           className="topbar-icon-btn"
           title={configured ? "Ajustes (conectado)" : "Ajustes (conecte a API)"}
