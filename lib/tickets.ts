@@ -25,8 +25,6 @@ export type Ticket = {
   cp: string;
   c: Date;
   u: Date;
-  /** Data real de fechamento (closedAt) — só vem da leitura ao vivo; a planilha não traz. */
-  closed: Date | null;
   mc: string;
   mu: string;
   dc: string;
@@ -36,16 +34,12 @@ export type Ticket = {
   search: string;
   /** "Atualizado em" no mesmo minuto que BULK_MIN+ tickets: atualização em lote. */
   bulk: boolean;
-  /** "closed" no mesmo minuto que BULK_MIN+ tickets: fechamento em lote. */
-  closedBulk: boolean;
 };
 
 export type Derived = {
   t: Ticket;
   res: boolean;
   rt: number | null;
-  /** Fim usado no tempo de resolução: "closed" = fechamento real (closedAt), "updated" = "Atualizado em". */
-  rtSrc: "closed" | "updated" | null;
   meta: number | null;
   useSla: boolean;
   inSla: boolean | null;
@@ -325,7 +319,6 @@ type TicketFields = {
   cp: string;
   c: Date;
   u: Date;
-  closed?: Date | null;
 };
 
 /** Monta um Ticket (com as chaves de mês/semana/dia já calculadas) a partir dos campos crus — compartilhado pelo .xlsx e pela API. */
@@ -345,7 +338,6 @@ function makeTicket(x: TicketFields): Ticket {
     cp: x.cp,
     c: x.c,
     u: x.u,
-    closed: x.closed ?? null,
     mc: mkey(x.c),
     mu: mkey(x.u),
     dc: ymd(x.c),
@@ -354,42 +346,26 @@ function makeTicket(x: TicketFields): Ticket {
     wu: isoWeek(x.u),
     search: "",
     bulk: false,
-    closedBulk: false,
   };
 }
 
-/**
- * Preenche `search` e marca atualização/fechamento em lote (mesmo minuto em
- * BULK_MIN+ tickets). Devolve a nota pra exibir.
- */
+/** Preenche `search` e marca atualização em lote (mesmo minuto em BULK_MIN+ tickets). Devolve a nota pra exibir. */
 function markBulk(tickets: Ticket[]): string {
-  const upd = new Map<number, number>();
-  const cls = new Map<number, number>();
+  const counts = new Map<number, number>();
   for (const t of tickets) {
     t.search = norm([t.id, t.titulo, t.desc, t.cliente].join(" "));
-    upd.set(minuteOf(t.u), (upd.get(minuteOf(t.u)) || 0) + 1);
-    if (t.closed) cls.set(minuteOf(t.closed), (cls.get(minuteOf(t.closed)) || 0) + 1);
+    counts.set(minuteOf(t.u), (counts.get(minuteOf(t.u)) || 0) + 1);
   }
   let bulkN = 0;
-  let closedN = 0;
+  let top: { min: number; n: number } | null = null;
   for (const t of tickets) {
-    t.bulk = (upd.get(minuteOf(t.u)) ?? 0) >= BULK_MIN;
-    t.closedBulk = t.closed != null && (cls.get(minuteOf(t.closed)) ?? 0) >= BULK_MIN;
+    t.bulk = (counts.get(minuteOf(t.u)) ?? 0) >= BULK_MIN;
     if (t.bulk) bulkN++;
-    if (t.closedBulk) closedN++;
   }
-  const top = (m: Map<number, number>) => {
-    let best: { min: number; n: number } | null = null;
-    for (const [min, n] of m) if (n >= BULK_MIN && (!best || n > best.n)) best = { min, n };
-    return best;
-  };
-  const tu = top(upd);
-  const tc = top(cls);
-  const parts: string[] = [];
-  if (bulkN && tu)
-    parts.push(`${bulkN} tickets compartilham o minuto de atualização (o maior: ${tu.n} em ${fmtDate(new Date(tu.min * 6e4))}), sinal de atualização em lote e não de resolução real.`);
-  if (closedN && tc) parts.push(`${closedN} foram fechados em lote (${tc.n} em ${fmtDate(new Date(tc.min * 6e4))}).`);
-  return parts.join(" ") || "Nenhuma atualização em lote detectada nestes tickets.";
+  for (const [min, n] of counts) if (n >= BULK_MIN && (!top || n > top.n)) top = { min, n };
+  return bulkN && top
+    ? `${bulkN} tickets compartilham o minuto de atualização (o maior: ${top.n} em ${fmtDate(new Date(top.min * 6e4))}), sinal de atualização em lote e não de resolução real.`
+    : "Nenhuma atualização em lote detectada nestes tickets.";
 }
 
 /* ---------- leitura ao vivo (SoftCS Bot) ---------- */
@@ -424,9 +400,6 @@ export type ApiExport = { generatedAt: string; count: number; missingClientNames
  *   Inatividade" também é pego pelo nome da etapa (isInat).
  * - sla vazio: a API não tem o texto "SLA estourado / X restantes" da
  *   planilha, então derive() usa a meta da prioridade (slaSrc = "meta").
- * - closed = closedAt: data real de fechamento, usada no tempo de resolução
- *   no lugar de "Atualizado em" (que muda com qualquer edição posterior).
- *   Vem vazio nos "Resolvido por Inatividade" (status segue OPEN na SoftCS).
  */
 export function parseTicketsApi(data: ApiExport): ParsedFile {
   const tickets: Ticket[] = [];
@@ -434,7 +407,6 @@ export function parseTicketsApi(data: ApiExport): ParsedFile {
     const c = t.createdAt ? new Date(t.createdAt) : null;
     if (!c || isNaN(+c)) continue;
     const u = t.updatedAt ? new Date(t.updatedAt) : c;
-    const closed = t.closedAt ? new Date(t.closedAt) : null;
     tickets.push(
       makeTicket({
         id: t.publicId ?? t.id,
@@ -450,7 +422,6 @@ export function parseTicketsApi(data: ApiExport): ParsedFile {
         cp: t.createdBy?.name ?? "",
         c,
         u: isNaN(+u) ? c : u,
-        closed: closed && !isNaN(+closed) ? closed : null,
       })
     );
   }
@@ -559,13 +530,9 @@ export function passes(t: Ticket, f: TicketFilters, skipDate = false) {
 
 export function derive(t: Ticket, ref: Date, ignoreBulk: boolean, metas: SlaMetas): Derived {
   const res = isRes(t);
-  // Tempo de resolução: até o fechamento real (closedAt, leitura ao vivo) quando
-  // houver; senão até "Atualizado em" (planilha e resolvidos por inatividade).
-  // O lote que tira do SLA é o da data usada: fechamento em lote ou atualização em lote.
-  const closedReal = res && t.closed != null;
-  const rt = res ? (+(closedReal ? t.closed! : t.u) - +t.c) / 36e5 : null;
+  const rt = res ? (+t.u - +t.c) / 36e5 : null;
   const meta = metaOf(t.pri, metas);
-  const useSla = res && !(ignoreBulk && (closedReal ? t.closedBulk : t.bulk));
+  const useSla = res && !(ignoreBulk && t.bulk);
 
   // Em aberto: vale o SLA que a planilha traz. Quando a coluna SLA vem vazia,
   // aplica a regra da meta da prioridade: estourou se já passou da meta desde a criação.
@@ -584,7 +551,6 @@ export function derive(t: Ticket, ref: Date, ignoreBulk: boolean, metas: SlaMeta
     t,
     res,
     rt,
-    rtSrc: res ? (closedReal ? "closed" : "updated") : null,
     meta,
     useSla,
     inSla: useSla && meta != null && rt != null ? rt <= meta : null,
@@ -621,7 +587,7 @@ export function sortVal(x: Derived, k: SortKey): number | string {
 }
 
 export function exportCSV(rows: Derived[]) {
-  const head = ["ID", "Título", "Cliente", "Prioridade", "Nível", "Etapa", "Situação", "Status original", "SLA", "Agente", "Criado em", "Atualizado em", "Fechado em", "Sem atualização (h)", "Tempo de resolução (h)", "Meta SLA (h)", "No prazo", "Atualização em lote", "Fechamento em lote"];
+  const head = ["ID", "Título", "Cliente", "Prioridade", "Nível", "Etapa", "Situação", "Status original", "SLA", "Agente", "Criado em", "Atualizado em", "Sem atualização (h)", "Tempo de resolução (h)", "Meta SLA (h)", "No prazo", "Atualização em lote"];
   const q = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const num = (v: number | null) => (v == null ? "" : v.toFixed(1).replace(".", ","));
   const lines = [head.map(q).join(";")].concat(
@@ -640,13 +606,11 @@ export function exportCSV(rows: Derived[]) {
         t.agente,
         fmtDate(t.c),
         fmtDate(t.u),
-        t.closed ? fmtDate(t.closed) : "",
         num(x.idle),
         num(x.rt),
         x.meta ?? "",
         x.inSla === null ? "" : x.inSla ? "Sim" : "Não",
         t.bulk ? "Sim" : "Não",
-        t.closedBulk ? "Sim" : "Não",
       ]
         .map(q)
         .join(";");
