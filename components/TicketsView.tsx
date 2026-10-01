@@ -30,6 +30,7 @@ import {
   monthWeeks,
   normalizeDates,
   pad,
+  parseTicketsApi,
   parseTicketsFile,
   passes,
   pct,
@@ -172,25 +173,49 @@ export default function TicketsView() {
   const fileInput = useRef<HTMLInputElement>(null);
   const tablePanel = useRef<HTMLElement>(null);
 
-  const handleFile = useCallback(async (fl: File | undefined) => {
-    if (!fl) return;
+  const applyLoaded = useCallback((loaded: Loaded) => {
+    setFile(loaded);
+    setF(defaultFilters(loaded.tickets));
+    setRef(new Date());
+    setCell(null);
+    setKf(null);
+    setPage(0);
+    setSort({ k: "idle", dir: -1 });
+  }, []);
+
+  const handleFile = useCallback(
+    async (fl: File | undefined) => {
+      if (!fl) return;
+      setErr("");
+      setReading(true);
+      try {
+        const parsed = await parseTicketsFile(fl);
+        applyLoaded({ name: fl.name, ...parsed });
+      } catch (e) {
+        setErr((e as Error).message);
+      } finally {
+        setReading(false);
+      }
+    },
+    [applyLoaded]
+  );
+
+  // Ao vivo: tickets da conta inteira via SoftCS Bot (ver app/api/tickets/softcs/route.ts).
+  const [loadingSoftcs, setLoadingSoftcs] = useState(false);
+  const loadSoftcs = useCallback(async () => {
     setErr("");
-    setReading(true);
+    setLoadingSoftcs(true);
     try {
-      const parsed = await parseTicketsFile(fl);
-      setFile({ name: fl.name, ...parsed });
-      setF(defaultFilters(parsed.tickets));
-      setRef(new Date());
-      setCell(null);
-      setKf(null);
-      setPage(0);
-      setSort({ k: "idle", dir: -1 });
+      const res = await fetch("/api/tickets/softcs", { cache: "no-store" });
+      const json = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(json?.error ?? `Falha ao buscar tickets (HTTP ${res.status}).`);
+      applyLoaded({ name: "SoftCS (ao vivo)", ...parseTicketsApi(json) });
     } catch (e) {
       setErr((e as Error).message);
     } finally {
-      setReading(false);
+      setLoadingSoftcs(false);
     }
-  }, []);
+  }, [applyLoaded]);
 
   // permite soltar o arquivo em qualquer lugar da página
   useEffect(() => {
@@ -376,6 +401,9 @@ export default function TicketsView() {
                 <span className="hint">
                   {file.name} ({file.tickets.length} tickets)
                 </span>
+                <button className="btn" onClick={loadSoftcs} disabled={loadingSoftcs}>
+                  {loadingSoftcs ? "Buscando na SoftCS…" : "Atualizar da SoftCS"}
+                </button>
                 <button className="btn" onClick={() => fileInput.current?.click()}>
                   Trocar arquivo
                 </button>
@@ -385,13 +413,20 @@ export default function TicketsView() {
           <div className="subtitle">
             {file && options.range
               ? `Tickets criados de ${fmtDate(options.range[0])} a ${fmtDate(options.range[1])}`
-              : "Carregue o .xlsx exportado para ver volume, resolução, SLA e tempo sem atualização"}
+              : "Carregue os tickets da SoftCS (ao vivo) ou o .xlsx exportado para ver volume, resolução, SLA e tempo sem atualização"}
           </div>
         </header>
 
         {err && <div className="error-box">{err}</div>}
 
         {!file || !f ? (
+          <>
+          <div className="tk-source">
+            <button className="btn primary" onClick={loadSoftcs} disabled={loadingSoftcs || reading}>
+              {loadingSoftcs ? "Buscando tickets na SoftCS…" : "Carregar da SoftCS (ao vivo)"}
+            </button>
+            <span className="hint">Todos os tickets da conta, abertos e encerrados, via SoftCS Bot. Leva alguns segundos.</span>
+          </div>
           <div
             className={`tk-drop ${dragOver ? "over" : ""}`}
             tabIndex={0}
@@ -411,6 +446,7 @@ export default function TicketsView() {
             <strong>{reading ? "Lendo arquivo…" : "Solte aqui o .xlsx de tickets"}</strong>
             <span className="hint">ou clique para escolher. O arquivo é lido só no seu navegador, nada é enviado para fora.</span>
           </div>
+          </>
         ) : (
           <>
             {/* FILTROS */}
@@ -587,7 +623,7 @@ export default function TicketsView() {
                     </button>
                     {file.exportDate && (
                       <button className="btn" onClick={() => setRef(file.exportDate!)}>
-                        Horário da exportação
+                        {file.name === "SoftCS (ao vivo)" ? "Horário da busca" : "Horário da exportação"}
                       </button>
                     )}
                   </div>

@@ -1,7 +1,8 @@
 /**
- * Painel de tickets — leitura do .xlsx exportado da ferramenta de tickets e
- * cálculo de volume, resolução, SLA e tempo sem atualização. Tudo roda no
- * navegador; nenhum dado do arquivo é enviado ao servidor.
+ * Painel de tickets — leitura dos tickets (do .xlsx exportado da ferramenta
+ * de tickets, ou ao vivo pela exportação do SoftCS Bot — ver
+ * parseTicketsApi) e cálculo de volume, resolução, SLA e tempo sem
+ * atualização. O cálculo roda no navegador; o .xlsx nunca sai dele.
  */
 
 export type Pri = "P0" | "P1" | "P2" | "P3" | "—";
@@ -269,34 +270,81 @@ export async function parseTicketsFile(file: File): Promise<ParsedFile> {
     const s = (k: ColKey) => String(g(k) ?? "").trim();
     const c = parseDate(g("c"));
     if (!c) continue;
-    const u = parseDate(g("u")) || c;
-    const pm = String(g("pri")).match(/P\s*([0-3])/i);
-    tickets.push({
-      id: s("id"),
-      titulo: s("titulo"),
-      desc: s("desc"),
-      etapa: s("etapa") || "—",
-      nivel: s("nivel") || SEM_NIVEL,
-      pri: pm ? (("P" + pm[1]) as Pri) : "—",
-      status: s("status"),
-      agente: s("agente") || "Sem responsável",
-      cliente: s("cliente") || "—",
-      sla: s("sla"),
-      cp: s("cp"),
-      c,
-      u,
-      mc: mkey(c),
-      mu: mkey(u),
-      dc: ymd(c),
-      du: ymd(u),
-      wc: isoWeek(c),
-      wu: isoWeek(u),
-      search: "",
-      bulk: false,
-    });
+    tickets.push(
+      makeTicket({
+        id: s("id"),
+        titulo: s("titulo"),
+        desc: s("desc"),
+        etapa: s("etapa"),
+        nivel: s("nivel"),
+        pri: String(g("pri")),
+        status: s("status"),
+        agente: s("agente"),
+        cliente: s("cliente"),
+        sla: s("sla"),
+        cp: s("cp"),
+        c,
+        u: parseDate(g("u")) || c,
+      })
+    );
   }
   if (!tickets.length) throw new Error("Nenhuma linha com data de criação válida foi encontrada.");
 
+  const bulkNote = markBulk(tickets);
+
+  const m = file.name.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})/);
+  const exportDate = m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null;
+
+  return { tickets, exportDate, bulkNote };
+}
+
+type TicketFields = {
+  id: string;
+  titulo: string;
+  desc: string;
+  etapa: string;
+  nivel: string;
+  /** Texto livre com a prioridade ("P1", "P1 - Alta"…); vira "—" se não achar P0–P3. */
+  pri: string;
+  status: string;
+  agente: string;
+  cliente: string;
+  sla: string;
+  cp: string;
+  c: Date;
+  u: Date;
+};
+
+/** Monta um Ticket (com as chaves de mês/semana/dia já calculadas) a partir dos campos crus — compartilhado pelo .xlsx e pela API. */
+function makeTicket(x: TicketFields): Ticket {
+  const pm = x.pri.match(/P\s*([0-3])/i);
+  return {
+    id: x.id,
+    titulo: x.titulo,
+    desc: x.desc,
+    etapa: x.etapa || "—",
+    nivel: x.nivel || SEM_NIVEL,
+    pri: pm ? (("P" + pm[1]) as Pri) : "—",
+    status: x.status,
+    agente: x.agente || "Sem responsável",
+    cliente: x.cliente || "—",
+    sla: x.sla,
+    cp: x.cp,
+    c: x.c,
+    u: x.u,
+    mc: mkey(x.c),
+    mu: mkey(x.u),
+    dc: ymd(x.c),
+    du: ymd(x.u),
+    wc: isoWeek(x.c),
+    wu: isoWeek(x.u),
+    search: "",
+    bulk: false,
+  };
+}
+
+/** Preenche `search` e marca atualização em lote (mesmo horário em BULK_MIN+ tickets). Devolve a nota pra exibir. */
+function markBulk(tickets: Ticket[]): string {
   const counts = new Map<number, number>();
   for (const t of tickets) {
     t.search = norm([t.id, t.titulo, t.desc, t.cliente].join(" "));
@@ -309,20 +357,76 @@ export async function parseTicketsFile(file: File): Promise<ParsedFile> {
     if (t.bulk) bulkN++;
   }
   for (const [ms, n] of counts) if (n >= BULK_MIN && (!top || n > top.n)) top = { ms, n };
-  const bulkNote =
-    bulkN && top
-      ? `${bulkN} tickets compartilham horários de atualização idênticos (o maior: ${top.n} em ${fmtDate(new Date(top.ms))}), sinal de atualização em lote e não de resolução real.`
-      : "Nenhuma atualização em lote detectada neste arquivo.";
+  return bulkN && top
+    ? `${bulkN} tickets compartilham horários de atualização idênticos (o maior: ${top.n} em ${fmtDate(new Date(top.ms))}), sinal de atualização em lote e não de resolução real.`
+    : "Nenhuma atualização em lote detectada nestes tickets.";
+}
 
-  const m = file.name.match(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})/);
-  const exportDate = m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null;
+/* ---------- leitura ao vivo (SoftCS Bot) ---------- */
 
-  return { tickets, exportDate, bulkNote };
+/** Formato de cada ticket em GET {SOFTCS_BOT_URL}/api/export-tickets (ver api/export-tickets.js no SoftCS Bot). */
+export type ApiTicket = {
+  id: string;
+  publicId: string | null;
+  title: string;
+  description: string;
+  stage: { id: string; name: string; isClosedStage: boolean };
+  status: "OPEN" | "CLOSED" | "CANCELLED" | null;
+  resolved: boolean;
+  priority: string | null;
+  escalationTier: string | null;
+  slaHours: number | null;
+  agent: { id: string; name: string | null } | null;
+  createdBy: { id: string; name: string | null } | null;
+  client: { id: string; name: string | null } | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  closedAt: string | null;
+};
+export type ApiExport = { generatedAt: string; count: number; missingClientNames: number; tickets: ApiTicket[] };
+
+/**
+ * Converte a exportação do SoftCS Bot pro mesmo Ticket do .xlsx, então todo o
+ * cálculo (volume, SLA, resolução, tempo sem atualização) segue igual.
+ * - id = publicId: é o que abre o ticket em TICKET_URL.
+ * - status "Resolvido" quando o bot diz resolved (coluna de encerramento ou
+ *   status fechado na SoftCS) — isRes() reconhece; "Resolvido por
+ *   Inatividade" também é pego pelo nome da etapa (isInat).
+ * - sla vazio: a API não tem o texto "SLA estourado / X restantes" da
+ *   planilha, então derive() usa a meta da prioridade (slaSrc = "meta").
+ */
+export function parseTicketsApi(data: ApiExport): ParsedFile {
+  const tickets: Ticket[] = [];
+  for (const t of data.tickets) {
+    const c = t.createdAt ? new Date(t.createdAt) : null;
+    if (!c || isNaN(+c)) continue;
+    const u = t.updatedAt ? new Date(t.updatedAt) : c;
+    tickets.push(
+      makeTicket({
+        id: t.publicId ?? t.id,
+        titulo: t.title,
+        desc: t.description,
+        etapa: t.stage?.name ?? "",
+        nivel: t.escalationTier ?? "",
+        pri: t.priority ?? "",
+        status: t.resolved ? (t.status === "CANCELLED" ? "Cancelado" : "Resolvido") : "Em aberto",
+        agente: t.agent?.name ?? "",
+        cliente: t.client?.name ?? "",
+        sla: "",
+        cp: t.createdBy?.name ?? "",
+        c,
+        u: isNaN(+u) ? c : u,
+      })
+    );
+  }
+  if (!tickets.length) throw new Error("A SoftCS não devolveu nenhum ticket com data de criação.");
+  return { tickets, exportDate: new Date(data.generatedAt), bulkNote: markBulk(tickets) };
 }
 
 /* ---------- filtros ---------- */
 export const isInat = (t: Ticket) => norm(t.etapa).includes("inatividade");
-export const isRes = (t: Ticket) => norm(t.status) === "resolvido" || isInat(t);
+// "cancelado" só vem da leitura ao vivo (parseTicketsApi): encerrado na SoftCS, então não conta como em aberto
+export const isRes = (t: Ticket) => ["resolvido", "cancelado"].includes(norm(t.status)) || isInat(t);
 
 export const baseDate = (t: Ticket, f: TicketFilters) => (f.base === "u" ? t.u : t.c);
 export const baseMonth = (t: Ticket, f: TicketFilters) => (f.base === "u" ? t.mu : t.mc);
