@@ -241,7 +241,8 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
           </div>
           <ul className="hint sla-rule-list">
             <li>
-              <b>Resolvidos</b> — a exportação não informa o SLA; fica no prazo se &quot;Atualizado em&quot; menos &quot;Criado em&quot; for até a meta.
+              <b>Resolvidos</b> — a exportação não informa o SLA; fica no prazo se o tempo entre &quot;Criado em&quot; e o fechamento for até a meta. O
+              fechamento é a data real quando os tickets vêm da SoftCS ao vivo, ou &quot;Atualizado em&quot; na planilha.
             </li>
             <li>
               <b>Em aberto com a coluna SLA vazia</b> — conta como estourado se já passou da meta desde a criação. Quando a planilha traz

@@ -690,7 +690,9 @@ export default function TicketsView() {
                 </table>
               </div>
               <div className="note-inline tk-note">
-                SLA de resolução = &quot;Atualizado em&quot; menos &quot;Criado em&quot; dos tickets resolvidos (a exportação não traz a data exata de resolução). Tempo sem
+                SLA de resolução = data de fechamento menos &quot;Criado em&quot; dos tickets resolvidos. Na leitura ao vivo (SoftCS) a data de fechamento é a real;
+                na planilha, que não a traz, e nos resolvidos por inatividade, usa &quot;Atualizado em&quot;. Atualizações e fechamentos em lote (15+ tickets no
+                mesmo minuto) ficam fora da média quando a opção acima está marcada. Tempo sem
                 atualização = referência de tempo menos &quot;Atualizado em&quot; dos tickets em aberto. Metas de SLA por prioridade:{" "}
                 {PRI_KEYS.filter((k) => metaOf(k, metas) != null)
                   .map((k) => `${k} ${fmtHours(metaOf(k, metas))}`)
@@ -994,11 +996,17 @@ function TicketRow({ x }: { x: Derived }) {
       <td className="mono">
         {x.res ? (
           <>
-            <span className={x.inSla === true ? "tk-ok" : x.inSla === false ? "tk-over" : ""} title={x.meta != null ? `Meta da prioridade ${t.pri}: ${fmtHours(x.meta)}` : "Sem meta (sem prioridade)"}>
+            <span
+              className={x.inSla === true ? "tk-ok" : x.inSla === false ? "tk-over" : ""}
+              title={
+                (x.meta != null ? `Meta da prioridade ${t.pri}: ${fmtHours(x.meta)}` : "Sem meta (sem prioridade)") +
+                (x.rtSrc === "closed" ? ` · até o fechamento em ${fmtDate(t.closed)}` : ' · até "Atualizado em" (sem data de fechamento)')
+              }
+            >
               {fmtHours(x.rt)}
             </span>
             {!x.useSla && (
-              <span className="faint" title="Fora da média: atualização em lote">
+              <span className="faint" title={x.rtSrc === "closed" ? "Fora da média: fechamento em lote" : "Fora da média: atualização em lote"}>
                 {" "}
                 *
               </span>
