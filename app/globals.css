@@ -604,6 +604,7 @@ footer{ margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); 
 .tk .field input[list]{ min-width: 180px; }
 
 .tk-source{ display:flex; align-items:center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.tk-source .loading{ padding: 0; }
 .tk-drop{
   border: 2px dashed var(--line); border-radius: 10px; background: var(--panel);
   padding: 64px 24px; text-align: center; cursor: pointer;

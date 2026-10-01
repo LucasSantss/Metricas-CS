@@ -30,6 +30,8 @@ import {
   monthWeeks,
   normalizeDates,
   pad,
+  AUTO_REFRESH_MS,
+  isBusinessHours,
   parseTicketsApi,
   parseTicketsFile,
   passes,
@@ -74,6 +76,9 @@ const COLS_T: [SortKey, string][] = [
 ];
 
 type Loaded = { name: string; tickets: Ticket[]; exportDate: Date | null; bulkNote: string };
+
+const SOFTCS_NAME = "SoftCS (ao vivo)";
+const fmtClock = (d: Date) => d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
 const smoothScroll = (el: Element | null) =>
   el?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
@@ -173,7 +178,19 @@ export default function TicketsView() {
   const fileInput = useRef<HTMLInputElement>(null);
   const tablePanel = useRef<HTMLElement>(null);
 
+  // A referência de tempo acompanha o relógio enquanto o usuário não escolher
+  // outra — assim a atualização automática também avança o "agora".
+  const refFollowsNow = useRef(true);
+  const setRefManual = (d: Date, followNow = false) => {
+    refFollowsNow.current = followNow;
+    setRef(d);
+  };
+
+  // De onde vieram os tickets na tela — a atualização automática só roda pra SoftCS.
+  const source = useRef<"softcs" | "xlsx" | null>(null);
+
   const applyLoaded = useCallback((loaded: Loaded) => {
+    refFollowsNow.current = true;
     setFile(loaded);
     setF(defaultFilters(loaded.tickets));
     setRef(new Date());
@@ -190,6 +207,7 @@ export default function TicketsView() {
       setReading(true);
       try {
         const parsed = await parseTicketsFile(fl);
+        source.current = "xlsx";
         applyLoaded({ name: fl.name, ...parsed });
       } catch (e) {
         setErr((e as Error).message);
@@ -201,21 +219,68 @@ export default function TicketsView() {
   );
 
   // Ao vivo: tickets da conta inteira via SoftCS Bot (ver app/api/tickets/softcs/route.ts).
+  // O bot mantém uma cópia atualizada a cada ~2 min (polling no expediente),
+  // então a página carrega sozinha ao abrir e se atualiza em segundo plano.
+  const lastSoftcsLoad = useRef(0);
   const [loadingSoftcs, setLoadingSoftcs] = useState(false);
-  const loadSoftcs = useCallback(async () => {
-    setErr("");
-    setLoadingSoftcs(true);
-    try {
-      const res = await fetch("/api/tickets/softcs", { cache: "no-store" });
-      const json = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(json?.error ?? `Falha ao buscar tickets (HTTP ${res.status}).`);
-      applyLoaded({ name: "SoftCS (ao vivo)", ...parseTicketsApi(json) });
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setLoadingSoftcs(false);
-    }
-  }, [applyLoaded]);
+  const [syncing, setSyncing] = useState(false);
+  const loadSoftcs = useCallback(
+    async ({ refresh = false, background = false, auto = false }: { refresh?: boolean; background?: boolean; auto?: boolean } = {}) => {
+      if (!background) setErr("");
+      (background ? setSyncing : setLoadingSoftcs)(true);
+      try {
+        const res = await fetch(`/api/tickets/softcs${refresh ? "?refresh=1" : ""}`, { cache: "no-store" });
+        const json = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(json?.error ?? `Falha ao buscar tickets (HTTP ${res.status}).`);
+        // Carga automática (ao abrir/em segundo plano) não passa por cima de
+        // uma planilha que o usuário carregou enquanto a busca rodava.
+        if ((auto || background) && source.current === "xlsx") return;
+        const loaded = { name: SOFTCS_NAME, ...parseTicketsApi(json) };
+        lastSoftcsLoad.current = Date.now();
+        if (source.current === "softcs") {
+          // Já estava vendo a SoftCS: troca só os dados, mantendo filtros,
+          // página, ordenação e recortes do jeito que o usuário deixou.
+          setFile(loaded);
+          if (refFollowsNow.current) setRef(new Date());
+        } else {
+          source.current = "softcs";
+          applyLoaded(loaded);
+        }
+        setErr("");
+      } catch (e) {
+        const msg = (e as Error).message;
+        setErr(background ? `Atualização automática falhou (os dados abaixo são da última atualização): ${msg}` : msg);
+      } finally {
+        (background ? setSyncing : setLoadingSoftcs)(false);
+      }
+    },
+    [applyLoaded]
+  );
+
+  // Carrega da SoftCS sozinho ao abrir a página.
+  useEffect(() => {
+    loadSoftcs({ auto: true });
+  }, [loadSoftcs]);
+
+  // Atualização automática: a cada AUTO_REFRESH_MS, só com a aba visível e no
+  // expediente (fora dele o bot não atualiza a cópia). Ao voltar pra aba, se
+  // já passou do intervalo, atualiza na hora.
+  useEffect(() => {
+    const due = () =>
+      source.current === "softcs" &&
+      document.visibilityState === "visible" &&
+      isBusinessHours() &&
+      Date.now() - lastSoftcsLoad.current >= AUTO_REFRESH_MS - 5000;
+    const tick = () => {
+      if (due()) loadSoftcs({ background: true });
+    };
+    const id = window.setInterval(tick, AUTO_REFRESH_MS);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [loadSoftcs]);
 
   // permite soltar o arquivo em qualquer lugar da página
   useEffect(() => {
@@ -400,9 +465,17 @@ export default function TicketsView() {
               <div className="page-header-actions">
                 <span className="hint">
                   {file.name} ({file.tickets.length} tickets)
+                  {file.name === SOFTCS_NAME && file.exportDate && (
+                    <>
+                      {" · "}
+                      {syncing
+                        ? "atualizando…"
+                        : `dados de ${fmtClock(file.exportDate)} · ${isBusinessHours() ? "atualiza sozinho a cada 2 min" : "atualização automática pausada fora do expediente"}`}
+                    </>
+                  )}
                 </span>
-                <button className="btn" onClick={loadSoftcs} disabled={loadingSoftcs}>
-                  {loadingSoftcs ? "Buscando na SoftCS…" : "Atualizar da SoftCS"}
+                <button className="btn" onClick={() => loadSoftcs({ refresh: true })} disabled={loadingSoftcs || syncing}>
+                  {loadingSoftcs ? "Buscando na SoftCS…" : file.name === SOFTCS_NAME ? "Atualizar agora" : "Carregar da SoftCS"}
                 </button>
                 <button className="btn" onClick={() => fileInput.current?.click()}>
                   Trocar arquivo
@@ -421,11 +494,17 @@ export default function TicketsView() {
 
         {!file || !f ? (
           <>
+          {/* Sem botão: a carga da SoftCS começa sozinha ao abrir a página (useEffect acima). */}
           <div className="tk-source">
-            <button className="btn primary" onClick={loadSoftcs} disabled={loadingSoftcs || reading}>
-              {loadingSoftcs ? "Buscando tickets na SoftCS…" : "Carregar da SoftCS (ao vivo)"}
-            </button>
-            <span className="hint">Todos os tickets da conta, abertos e encerrados, via SoftCS Bot. Leva alguns segundos.</span>
+            {err && !loadingSoftcs ? (
+              <span className="hint">
+                Não foi possível carregar os tickets da SoftCS automaticamente. Recarregue a página para tentar de novo, ou use a planilha abaixo.
+              </span>
+            ) : (
+              <span className="loading" role="status">
+                Carregando todos os tickets da SoftCS (abertos e encerrados)…
+              </span>
+            )}
           </div>
           <div
             className={`tk-drop ${dragOver ? "over" : ""}`}
@@ -615,15 +694,15 @@ export default function TicketsView() {
                       value={toLocalInput(ref)}
                       onChange={(e) => {
                         const d = new Date(e.target.value);
-                        if (!isNaN(+d)) setRef(d);
+                        if (!isNaN(+d)) setRefManual(d);
                       }}
                     />
-                    <button className="btn" onClick={() => setRef(new Date())}>
+                    <button className="btn" onClick={() => setRefManual(new Date(), true)}>
                       Agora
                     </button>
                     {file.exportDate && (
-                      <button className="btn" onClick={() => setRef(file.exportDate!)}>
-                        {file.name === "SoftCS (ao vivo)" ? "Horário da busca" : "Horário da exportação"}
+                      <button className="btn" onClick={() => setRefManual(file.exportDate!)}>
+                        {file.name === SOFTCS_NAME ? "Horário dos dados" : "Horário da exportação"}
                       </button>
                     )}
                   </div>

@@ -389,7 +389,31 @@ export type ApiTicket = {
   updatedAt: string | null;
   closedAt: string | null;
 };
-export type ApiExport = { generatedAt: string; count: number; missingClientNames: number; tickets: ApiTicket[] };
+export type ApiExport = {
+  generatedAt: string;
+  /** Quando a cópia do bot foi atualizada da SoftCS pela última vez (polling a cada ~2 min, no expediente). */
+  snapshotAt?: string | null;
+  count: number;
+  missingClientNames: number;
+  tickets: ApiTicket[];
+};
+
+/** Intervalo da atualização automática do painel — mesmo ritmo do polling do bot. */
+export const AUTO_REFRESH_MS = 2 * 60 * 1000;
+
+/**
+ * Expediente do suporte (horário de Brasília): seg–sex 9h–18h, sáb 9h–14h —
+ * o mesmo em que o polling do SoftCS Bot roda. Fora dele os dados não mudam,
+ * então o painel não fica buscando (e não acorda o banco do bot à toa).
+ */
+export function isBusinessHours(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", weekday: "short", hour: "numeric", hour12: false }).formatToParts(date);
+  const weekday = parts.find((p) => p.type === "weekday")!.value;
+  const hour = Number.parseInt(parts.find((p) => p.type === "hour")!.value, 10) % 24;
+  if (weekday === "Sun") return false;
+  if (weekday === "Sat") return hour >= 9 && hour < 14;
+  return hour >= 9 && hour < 18;
+}
 
 /**
  * Converte a exportação do SoftCS Bot pro mesmo Ticket do .xlsx, então todo o
@@ -426,7 +450,7 @@ export function parseTicketsApi(data: ApiExport): ParsedFile {
     );
   }
   if (!tickets.length) throw new Error("A SoftCS não devolveu nenhum ticket com data de criação.");
-  return { tickets, exportDate: new Date(data.generatedAt), bulkNote: markBulk(tickets) };
+  return { tickets, exportDate: new Date(data.snapshotAt ?? data.generatedAt), bulkNote: markBulk(tickets) };
 }
 
 /* ---------- filtros ---------- */

@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -6,13 +6,17 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
+ * `?refresh=1` pede ao bot pra puxar da SoftCS o que mudou antes de responder
+ * (botão "Atualizar agora"); sem ele, o bot responde direto da cópia que o
+ * polling dele mantém atualizada a cada ~2 min.
+ *
  * Proxy servidor-a-servidor pra exportação de tickets do SoftCS Bot
  * (GET {SOFTCS_BOT_URL}/api/export-tickets). A chave fica só na env var
  * SOFTCS_BOT_EXPORT_KEY — nunca vai pro navegador. O bot é quem tem a
  * conexão OAuth com a SoftCS e os nomes (colunas, agentes, clientes) que a
  * API pública não devolve.
  */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const baseUrl = process.env.SOFTCS_BOT_URL?.replace(/\/+$/, "");
   const key = process.env.SOFTCS_BOT_EXPORT_KEY;
   if (!baseUrl || !key) {
@@ -23,7 +27,8 @@ export async function GET() {
   }
 
   try {
-    const res = await fetch(`${baseUrl}/api/export-tickets`, {
+    const refresh = req.nextUrl.searchParams.get("refresh") === "1";
+    const res = await fetch(`${baseUrl}/api/export-tickets${refresh ? "?refresh=1" : ""}`, {
       headers: { Authorization: `Bearer ${key}` },
       cache: "no-store",
     });
