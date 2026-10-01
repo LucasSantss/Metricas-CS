@@ -28,6 +28,11 @@ CREATE TABLE IF NOT EXISTS departments (
 
 ALTER TABLE departments ADD COLUMN IF NOT EXISTS attendant_ids TEXT[] NOT NULL DEFAULT '{}';
 ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS get_current BOOLEAN NOT NULL DEFAULT false;
+-- metas de SLA de resolução dos tickets, por prioridade (em minutos)
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_sla_p0_minutes INT NOT NULL DEFAULT 720;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_sla_p1_minutes INT NOT NULL DEFAULT 1440;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_sla_p2_minutes INT NOT NULL DEFAULT 2880;
+ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_sla_p3_minutes INT NOT NULL DEFAULT 10080;
 
 INSERT INTO app_settings (id) VALUES (1)
 ON CONFLICT (id) DO NOTHING;

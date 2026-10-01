@@ -18,7 +18,12 @@ export type AppSettings = {
   getCurrent: boolean;
   /** true quando URL/token vêm de env var (SURI_CHATBOT_URL/SURI_BEARER_TOKEN) e não podem ser editados pela UI */
   connectionLocked: boolean;
+  /** Metas de SLA de resolução dos tickets, em horas, por prioridade (tela "Painel de tickets") */
+  ticketSlaHours: TicketSlaHours;
 };
+
+export type TicketSlaHours = { P0: number; P1: number; P2: number; P3: number };
+export const DEFAULT_TICKET_SLA_HOURS: TicketSlaHours = { P0: 12, P1: 24, P2: 48, P3: 168 };
 
 export type Department = {
   id: number;
@@ -104,6 +109,18 @@ export async function ensureSchema() {
     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS get_current BOOLEAN NOT NULL DEFAULT false
   `;
   await sql`
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_sla_p0_minutes INT NOT NULL DEFAULT 720
+  `;
+  await sql`
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_sla_p1_minutes INT NOT NULL DEFAULT 1440
+  `;
+  await sql`
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_sla_p2_minutes INT NOT NULL DEFAULT 2880
+  `;
+  await sql`
+    ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_sla_p3_minutes INT NOT NULL DEFAULT 10080
+  `;
+  await sql`
     INSERT INTO app_settings (id) VALUES (1)
     ON CONFLICT (id) DO NOTHING
   `;
@@ -116,7 +133,9 @@ export async function getSettings(): Promise<AppSettings> {
 
   const sql = getSql();
   await ensureSchema();
-  const rows = await sql`SELECT chatbot_url, bearer_token, use_business_hours, get_current FROM app_settings WHERE id = 1`;
+  const rows = await sql`SELECT chatbot_url, bearer_token, use_business_hours, get_current,
+    ticket_sla_p0_minutes, ticket_sla_p1_minutes, ticket_sla_p2_minutes, ticket_sla_p3_minutes
+    FROM app_settings WHERE id = 1`;
   const row = rows[0] as any;
   return {
     chatbotUrl: connectionLocked ? envUrl : row?.chatbot_url ?? null,
@@ -124,6 +143,12 @@ export async function getSettings(): Promise<AppSettings> {
     useBusinessHours: row?.use_business_hours ?? false,
     getCurrent: row?.get_current ?? false,
     connectionLocked,
+    ticketSlaHours: {
+      P0: row?.ticket_sla_p0_minutes != null ? row.ticket_sla_p0_minutes / 60 : DEFAULT_TICKET_SLA_HOURS.P0,
+      P1: row?.ticket_sla_p1_minutes != null ? row.ticket_sla_p1_minutes / 60 : DEFAULT_TICKET_SLA_HOURS.P1,
+      P2: row?.ticket_sla_p2_minutes != null ? row.ticket_sla_p2_minutes / 60 : DEFAULT_TICKET_SLA_HOURS.P2,
+      P3: row?.ticket_sla_p3_minutes != null ? row.ticket_sla_p3_minutes / 60 : DEFAULT_TICKET_SLA_HOURS.P3,
+    },
   };
 }
 
@@ -132,6 +157,7 @@ export async function saveSettings(input: {
   bearerToken?: string;
   useBusinessHours?: boolean;
   getCurrent?: boolean;
+  ticketSlaHours?: Partial<TicketSlaHours>;
 }) {
   const sql = getSql();
   await ensureSchema();
@@ -142,12 +168,18 @@ export async function saveSettings(input: {
   const bearerToken = current.connectionLocked ? current.bearerToken : input.bearerToken ?? current.bearerToken;
   const useBusinessHours = input.useBusinessHours ?? current.useBusinessHours;
   const getCurrent = input.getCurrent ?? current.getCurrent;
+  const sla = { ...current.ticketSlaHours, ...input.ticketSlaHours };
+  const toMin = (h: number) => Math.round(h * 60);
   await sql`
     UPDATE app_settings
     SET chatbot_url = ${chatbotUrl},
         bearer_token = ${bearerToken},
         use_business_hours = ${useBusinessHours},
         get_current = ${getCurrent},
+        ticket_sla_p0_minutes = ${toMin(sla.P0)},
+        ticket_sla_p1_minutes = ${toMin(sla.P1)},
+        ticket_sla_p2_minutes = ${toMin(sla.P2)},
+        ticket_sla_p3_minutes = ${toMin(sla.P3)},
         updated_at = now()
     WHERE id = 1
   `;

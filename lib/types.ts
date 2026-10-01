@@ -4,6 +4,8 @@ export type ConfigResponse = {
   useBusinessHours: boolean;
   getCurrent: boolean;
   connectionLocked: boolean;
+  /** Metas de SLA de resolução dos tickets, em horas, por prioridade */
+  ticketSlaHours?: { P0: number; P1: number; P2: number; P3: number };
 };
 
 export type DepartmentDto = {

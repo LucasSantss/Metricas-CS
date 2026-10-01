@@ -8,7 +8,26 @@ type Props = {
   departments: DepartmentDto[];
   onConfigSaved: () => void;
   onDepartmentsChanged: () => void;
+  /** Aba aberta ao entrar no modal (a tela de tickets abre direto em "Tickets") */
+  initialTab?: SettingsTab;
 };
+
+type SettingsTab = "atendimentos" | "tickets";
+type SlaKey = "P0" | "P1" | "P2" | "P3";
+const SLA_KEYS: SlaKey[] = ["P0", "P1", "P2", "P3"];
+const SLA_LABELS: Record<SlaKey, string> = { P0: "P0 - Crítica", P1: "P1 - Alta", P2: "P2 - Média", P3: "P3 - Baixa" };
+const DEFAULT_SLA: Record<SlaKey, number> = { P0: 12, P1: 24, P2: 48, P3: 168 };
+
+/** 36 -> "1 dia e 12h" — ajuda a conferir a meta digitada em horas. */
+function hoursInWords(h: number): string {
+  if (!isFinite(h) || h <= 0) return "—";
+  const d = Math.floor(h / 24);
+  const rest = Math.round((h - d * 24) * 10) / 10;
+  const hh = rest ? `${String(rest).replace(".", ",")}h` : "";
+  if (!d) return hh;
+  const dd = `${d} ${d === 1 ? "dia" : "dias"}`;
+  return hh ? `${dd} e ${hh}` : dd;
+}
 
 type DraftDept = DepartmentDto & {
   goalTmeMin: number;
@@ -43,7 +62,13 @@ function toDraft(d: DepartmentDto): DraftDept {
   };
 }
 
-export default function SettingsPanel({ config, departments, onConfigSaved, onDepartmentsChanged }: Props) {
+export default function SettingsPanel({ config, departments, onConfigSaved, onDepartmentsChanged, initialTab = "atendimentos" }: Props) {
+  const [tab, setTab] = useState<SettingsTab>(initialTab);
+  const [slaDraft, setSlaDraft] = useState<Record<SlaKey, number>>({ ...DEFAULT_SLA, ...config?.ticketSlaHours });
+  const [savingSla, setSavingSla] = useState(false);
+  const [slaSaved, setSlaSaved] = useState(false);
+  useEffect(() => setSlaDraft({ ...DEFAULT_SLA, ...config?.ticketSlaHours }), [config?.ticketSlaHours]);
+
   const [useBusinessHours, setUseBusinessHours] = useState(config?.useBusinessHours ?? false);
   const [getCurrent, setGetCurrent] = useState(config?.getCurrent ?? false);
   const [savingConfig, setSavingConfig] = useState(false);
@@ -76,6 +101,27 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
       setError(e.message);
     } finally {
       setSavingConfig(false);
+    }
+  }
+
+  async function saveSla() {
+    setSavingSla(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticketSlaHours: slaDraft }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Falha ao salvar metas de SLA");
+      onConfigSaved();
+      setSlaSaved(true);
+      setTimeout(() => setSlaSaved(false), 1500);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSavingSla(false);
     }
   }
 
@@ -172,6 +218,74 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
     <div className="settings-body">
       {error && <div className="error-box">{error}</div>}
 
+      <div className="view-mode-toggle settings-tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === "atendimentos"} className={tab === "atendimentos" ? "on" : ""} onClick={() => setTab("atendimentos")}>
+          Atendimentos
+        </button>
+        <button type="button" role="tab" aria-selected={tab === "tickets"} className={tab === "tickets" ? "on" : ""} onClick={() => setTab("tickets")}>
+          Tickets
+        </button>
+      </div>
+
+      {tab === "tickets" && (
+        <section className="settings-section">
+          <div className="settings-section-title">
+            Metas de SLA por prioridade
+            <span className="hint" style={{ marginLeft: 8, fontWeight: 400 }}>
+              usadas na tela &quot;Painel de tickets&quot;
+            </span>
+          </div>
+          <div className="hint" style={{ marginBottom: -4 }}>
+            Tempo máximo, em horas, para resolver um ticket de cada prioridade. O nível (N1–N4) não altera a meta. A regra vale sempre que a
+            planilha não traz o resultado do SLA:
+          </div>
+          <ul className="hint sla-rule-list">
+            <li>
+              <b>Resolvidos</b> — a exportação não informa o SLA; fica no prazo se &quot;Atualizado em&quot; menos &quot;Criado em&quot; for até a meta.
+            </li>
+            <li>
+              <b>Em aberto com a coluna SLA vazia</b> — conta como estourado se já passou da meta desde a criação. Quando a planilha traz
+              &quot;SLA estourado&quot; ou &quot;X restantes&quot;, vale o que veio nela.
+            </li>
+          </ul>
+
+          <div className="dept-config-table">
+            <div className="dept-config-head sla-goal-head">
+              <span>Prioridade</span>
+              <span>Meta (horas)</span>
+              <span>Equivale a</span>
+            </div>
+            <div className="dept-list">
+              {SLA_KEYS.map((k) => (
+                <div className="dept-config-row sla-goal-row" key={k}>
+                  <span className="pct-goal-dept-name">{SLA_LABELS[k]}</span>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0.5"
+                    value={slaDraft[k]}
+                    onChange={(e) => setSlaDraft((cur) => ({ ...cur, [k]: Number(e.target.value) }))}
+                  />
+                  <span className="hint">{hoursInWords(slaDraft[k])}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="settings-row" style={{ alignItems: "center" }}>
+            <button className="btn primary" disabled={savingSla} onClick={saveSla}>
+              {savingSla ? "Salvando…" : "Salvar metas"}
+            </button>
+            <button className="btn" onClick={() => setSlaDraft({ ...DEFAULT_SLA })}>
+              Restaurar padrão (12h / 24h / 48h / 168h)
+            </button>
+            {slaSaved && <span className="hint" style={{ color: "var(--good)" }}>Salvo ✓</span>}
+          </div>
+        </section>
+      )}
+
+      {tab === "atendimentos" && (
+      <>
       <section className="settings-section">
         <div className="settings-section-title">Opções</div>
         <div className="dept-toggle-list">
@@ -379,6 +493,8 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
           </div>
         ))}
       </section>
+      </>
+      )}
     </div>
   );
 }

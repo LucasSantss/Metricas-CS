@@ -13,7 +13,9 @@ export type Ticket = {
   titulo: string;
   desc: string;
   etapa: string;
+  /** N1–N4: nível de atendimento. Não interfere na meta de SLA. */
   nivel: string;
+  /** P0–P3: prioridade. É ela que define a meta de SLA (ver SlaMetas, editáveis em Ajustes > Tickets). */
   pri: Pri;
   status: string;
   agente: string;
@@ -41,6 +43,13 @@ export type Derived = {
   inSla: boolean | null;
   idle: number;
   late: boolean;
+  /**
+   * De onde veio a situação de SLA de um ticket em aberto:
+   * "export" = coluna SLA da planilha ("SLA estourado" / "X restantes");
+   * "meta" = a planilha não trouxe o SLA, então foi calculado pela meta da prioridade;
+   * null = resolvido, ou sem prioridade (sem meta).
+   */
+  slaSrc: "export" | "meta" | null;
 };
 
 export type Period = "day" | "week" | "month";
@@ -55,7 +64,7 @@ export type TicketFilters = {
   pri: Set<Pri>;
   status: "" | "res" | "open";
   etapa: string;
-  nivel: string;
+  nivel: Set<string>;
   agente: string;
   cliente: string;
   q: string;
@@ -74,6 +83,7 @@ export const PRI: Record<Pri, { l: string; c: string }> = {
 };
 export const PRI_KEYS: Pri[] = ["P0", "P1", "P2", "P3", "—"];
 export const priLabel = (p: Pri) => (p === "—" ? "Sem prioridade" : `${p} - ${PRI[p].l}`);
+export const SEM_NIVEL = "Sem nível";
 
 export const BUCKETS: [number, string][] = [
   [24, "até 1 dia"],
@@ -86,11 +96,18 @@ export const BUCKETS: [number, string][] = [
 export const PAGE_SIZE = 50;
 export const TICKET_URL = "https://admin.softcs.com.br/pt-br/tickets/";
 
-// Metas de SLA de resolução por prioridade, em horas (edite aqui se mudarem)
-export const META: Partial<Record<Pri, number>> = { P0: 12, P1: 24, P2: 48, P3: 168 };
+/** Metas de SLA de resolução por prioridade, em horas. Vêm de Ajustes > Tickets (salvo no banco). */
+export type SlaMetas = { P0: number; P1: number; P2: number; P3: number };
+export const DEFAULT_META: SlaMetas = { P0: 12, P1: 24, P2: 48, P3: 168 };
+export const metaOf = (p: Pri, metas: SlaMetas): number | null => (p === "—" ? null : metas[p]);
+/** "meta 12h" / "meta 7d" / "sem meta" — meta de SLA da prioridade. */
+export const metaLabel = (p: Pri, metas: SlaMetas) => {
+  const m = metaOf(p, metas);
+  return m != null ? `meta ${fmtHours(m)}` : "sem meta";
+};
 const BULK_MIN = 15; // mesmo horário de atualização em 15+ tickets = atualização em lote
 
-export type SortKey = "id" | "titulo" | "cliente" | "pri" | "etapa" | "status" | "agente" | "c" | "u" | "idle" | "rt";
+export type SortKey = "id" | "titulo" | "cliente" | "pri" | "nivel" | "etapa" | "status" | "agente" | "c" | "u" | "idle" | "rt";
 export type Sort = { k: SortKey; dir: 1 | -1 };
 
 export type KpiKey = "all" | "res" | "inat" | "sla" | "prazo" | "ok" | "fora" | "open" | "late" | "idle";
@@ -200,7 +217,7 @@ const COLS: Record<ColKey, string[]> = {
   desc: ["descricao"],
   etapa: ["etapa"],
   nivel: ["nivel"],
-  pri: ["prioridade", "criticidade"],
+  pri: ["prioridade"],
   status: ["status"],
   agente: ["agente responsavel", "agente"],
   cliente: ["cliente(s)", "cliente", "clientes"],
@@ -259,7 +276,7 @@ export async function parseTicketsFile(file: File): Promise<ParsedFile> {
       titulo: s("titulo"),
       desc: s("desc"),
       etapa: s("etapa") || "—",
-      nivel: s("nivel") || "—",
+      nivel: s("nivel") || SEM_NIVEL,
       pri: pm ? (("P" + pm[1]) as Pri) : "—",
       status: s("status"),
       agente: s("agente") || "Sem responsável",
@@ -356,7 +373,7 @@ export function defaultFilters(tickets: Ticket[], base: "c" | "u" = "c", bulk = 
     pri: new Set(),
     status: "",
     etapa: "",
-    nivel: "",
+    nivel: new Set(),
     agente: "",
     cliente: "",
     q: "",
@@ -394,18 +411,32 @@ export function passes(t: Ticket, f: TicketFilters, skipDate = false) {
   if (f.status === "res" && !isRes(t)) return false;
   if (f.status === "open" && isRes(t)) return false;
   if (f.etapa && t.etapa !== f.etapa) return false;
-  if (f.nivel && t.nivel !== f.nivel) return false;
+  if (f.nivel.size && !f.nivel.has(t.nivel)) return false;
   if (f.agente && t.agente !== f.agente) return false;
   if (f.cliente && !norm(t.cliente).includes(norm(f.cliente))) return false;
   if (f.q && !t.search.includes(norm(f.q))) return false;
   return true;
 }
 
-export function derive(t: Ticket, ref: Date, ignoreBulk: boolean): Derived {
+export function derive(t: Ticket, ref: Date, ignoreBulk: boolean, metas: SlaMetas): Derived {
   const res = isRes(t);
   const rt = res ? (+t.u - +t.c) / 36e5 : null;
-  const meta = META[t.pri] ?? null;
+  const meta = metaOf(t.pri, metas);
   const useSla = res && !(ignoreBulk && t.bulk);
+
+  // Em aberto: vale o SLA que a planilha traz. Quando a coluna SLA vem vazia,
+  // aplica a regra da meta da prioridade: estourou se já passou da meta desde a criação.
+  let late = false;
+  let slaSrc: Derived["slaSrc"] = null;
+  if (!res) {
+    if (t.sla) {
+      late = /estourad/i.test(t.sla);
+      slaSrc = "export";
+    } else if (meta != null) {
+      late = (+ref - +t.c) / 36e5 > meta;
+      slaSrc = "meta";
+    }
+  }
   return {
     t,
     res,
@@ -414,7 +445,8 @@ export function derive(t: Ticket, ref: Date, ignoreBulk: boolean): Derived {
     useSla,
     inSla: useSla && meta != null && rt != null ? rt <= meta : null,
     idle: (+ref - +t.u) / 36e5,
-    late: !res && /estourad/i.test(t.sla),
+    late,
+    slaSrc,
   };
 }
 
@@ -445,7 +477,7 @@ export function sortVal(x: Derived, k: SortKey): number | string {
 }
 
 export function exportCSV(rows: Derived[]) {
-  const head = ["ID", "Título", "Cliente", "Criticidade", "Etapa", "Situação", "Status original", "SLA", "Agente", "Nível", "Criado em", "Atualizado em", "Sem atualização (h)", "Tempo de resolução (h)", "Meta SLA (h)", "No prazo", "Atualização em lote"];
+  const head = ["ID", "Título", "Cliente", "Prioridade", "Nível", "Etapa", "Situação", "Status original", "SLA", "Agente", "Criado em", "Atualizado em", "Sem atualização (h)", "Tempo de resolução (h)", "Meta SLA (h)", "No prazo", "Atualização em lote"];
   const q = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const num = (v: number | null) => (v == null ? "" : v.toFixed(1).replace(".", ","));
   const lines = [head.map(q).join(";")].concat(
@@ -456,12 +488,12 @@ export function exportCSV(rows: Derived[]) {
         t.titulo,
         t.cliente,
         t.pri === "—" ? "" : priLabel(t.pri),
+        t.nivel === SEM_NIVEL ? "" : t.nivel,
         t.etapa,
         x.res ? (isInat(t) ? "Resolvido por inatividade" : "Resolvido") : "Em aberto",
         t.status,
         t.sla,
         t.agente,
-        t.nivel,
         fmtDate(t.c),
         fmtDate(t.u),
         num(x.idle),

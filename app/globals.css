@@ -737,3 +737,14 @@ footer{ margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); 
   .tk-wk{ grid-template-columns: 1fr; gap: 4px; }
   .tk-push{ margin-left: 0; }
 }
+.tk-meta{ margin-left: 8px; font-family:'IBM Plex Mono', monospace; font-size: 11px; color: var(--text-faint); }
+.dept-toggle.on .tk-meta{ color: var(--text-dim); }
+
+/* Abas do modal de Ajustes (Atendimentos / Tickets) */
+.settings-tabs{ justify-self: start; }
+.sla-goal-head, .sla-goal-row{ grid-template-columns: minmax(160px, 260px) 110px 1fr; }
+.sla-rule-list{ display:grid; gap: 4px; padding-left: 18px; }
+.sla-rule-list b{ color: var(--text-dim); font-weight: 600; }
+@media (max-width: 600px){
+  .sla-goal-head, .sla-goal-row{ grid-template-columns: 1fr; gap: 4px; }
+}

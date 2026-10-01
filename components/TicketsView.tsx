@@ -36,6 +36,11 @@ import {
   periodLabel,
   prazo,
   priLabel,
+  metaLabel,
+  SEM_NIVEL,
+  DEFAULT_META,
+  metaOf,
+  type SlaMetas,
   sortVal,
   toLocalInput,
   uniq,
@@ -56,7 +61,8 @@ const COLS_T: [SortKey, string][] = [
   ["id", "ID"],
   ["titulo", "Título"],
   ["cliente", "Cliente"],
-  ["pri", "Criticidade"],
+  ["pri", "Prioridade"],
+  ["nivel", "Nível"],
   ["etapa", "Etapa"],
   ["status", "Situação"],
   ["agente", "Agente"],
@@ -149,6 +155,8 @@ export default function TicketsView() {
     loadDepartments();
   }, [loadConfig, loadDepartments]);
   const configured = Boolean(config?.chatbotUrl && config?.hasToken);
+  // metas de SLA por prioridade (Ajustes > Tickets); padrão enquanto o banco não responde
+  const metas: SlaMetas = useMemo(() => ({ ...DEFAULT_META, ...config?.ticketSlaHours }), [config?.ticketSlaHours]);
 
   // Arquivo e filtros
   const [file, setFile] = useState<Loaded | null>(null);
@@ -212,7 +220,7 @@ export default function TicketsView() {
     setPage(0);
   };
 
-  const list = useMemo(() => (f ? tickets.filter((t) => passes(t, f)).map((t) => derive(t, ref, f.bulk)) : []), [tickets, f, ref]);
+  const list = useMemo(() => (f ? tickets.filter((t) => passes(t, f)).map((t) => derive(t, ref, f.bulk, metas)) : []), [tickets, f, ref, metas]);
 
   const options = useMemo(
     () => ({
@@ -231,7 +239,7 @@ export default function TicketsView() {
 
   const monthData = useMemo(() => {
     if (!f) return { keys: [] as string[], groups: new Map<string, Derived[]>(), all: [] as Derived[] };
-    const all = tickets.filter((t) => passes(t, f, true) && baseDate(t, f).getFullYear() === f.year).map((t) => derive(t, ref, f.bulk));
+    const all = tickets.filter((t) => passes(t, f, true) && baseDate(t, f).getFullYear() === f.year).map((t) => derive(t, ref, f.bulk, metas));
     const groups = new Map<string, Derived[]>();
     all.forEach((x) => {
       const k = baseMonth(x.t, f);
@@ -239,7 +247,7 @@ export default function TicketsView() {
       groups.get(k)!.push(x);
     });
     return { keys: [...groups.keys()].sort(), groups, all };
-  }, [tickets, f, ref]);
+  }, [tickets, f, ref, metas]);
 
   const weekRows = useMemo(() => {
     if (!f) return [];
@@ -316,6 +324,14 @@ export default function TicketsView() {
     patch({ pri: next });
   }
 
+  function toggleNivel(n: string) {
+    if (!f) return;
+    const next = new Set(f.nivel);
+    if (next.has(n)) next.delete(n);
+    else next.add(n);
+    patch({ nivel: next });
+  }
+
   function clearFilters() {
     if (!f) return;
     setF(defaultFilters(tickets, f.base, f.bulk));
@@ -346,7 +362,7 @@ export default function TicketsView() {
       <TopBar breadcrumb="Relatórios / Suporte" title="Painel de tickets" configured={configured} onOpenSettings={() => setSettingsOpen(true)} />
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)}>
-        <SettingsPanel config={config} departments={departments} onConfigSaved={loadConfig} onDepartmentsChanged={loadDepartments} />
+        <SettingsPanel config={config} departments={departments} onConfigSaved={loadConfig} onDepartmentsChanged={loadDepartments} initialTab="tickets" />
       </SettingsModal>
 
       {fileInputEl}
@@ -481,18 +497,34 @@ export default function TicketsView() {
                 )}
               </div>
 
-              <div className="field grow">
-                <label>Criticidade</label>
-                <div className="dept-toggle-list">
-                  {PRI_KEYS.filter((k) => k !== "—" || options.hasNoPri).map((k) => {
-                    const on = f.pri.has(k);
-                    return (
-                      <button key={k} type="button" className={`dept-toggle tk-pri-toggle ${on ? "on" : ""}`} aria-pressed={on} onClick={() => togglePri(k)}>
-                        <i className="tk-dot" style={{ background: PRI[k].c }} />
-                        {priLabel(k)}
-                      </button>
-                    );
-                  })}
+              <div className="filter-bar-row">
+                <div className="field">
+                  <label>Prioridade (define a meta de SLA)</label>
+                  <div className="dept-toggle-list">
+                    {PRI_KEYS.filter((k) => k !== "—" || options.hasNoPri).map((k) => {
+                      const on = f.pri.has(k);
+                      return (
+                        <button key={k} type="button" className={`dept-toggle tk-pri-toggle ${on ? "on" : ""}`} aria-pressed={on} onClick={() => togglePri(k)}>
+                          <i className="tk-dot" style={{ background: PRI[k].c }} />
+                          {priLabel(k)}
+                          <span className="tk-meta">{metaLabel(k, metas)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="field">
+                  <label>Nível de atendimento</label>
+                  <div className="dept-toggle-list">
+                    {options.nivel.map((n) => {
+                      const on = f.nivel.has(n);
+                      return (
+                        <button key={n} type="button" className={`dept-toggle ${on ? "on" : ""}`} aria-pressed={on} onClick={() => toggleNivel(n)}>
+                          {n}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
@@ -508,7 +540,6 @@ export default function TicketsView() {
                 {(
                   [
                     ["etapa", "Etapa", "Todas"],
-                    ["nivel", "Nível", "Todos"],
                     ["agente", "Agente responsável", "Todos"],
                   ] as const
                 ).map(([k, l, all]) => (
@@ -593,7 +624,7 @@ export default function TicketsView() {
                     <tr>
                       <th>Mês</th>
                       <th className="num">Tickets</th>
-                      <th>Criticidade</th>
+                      <th>Prioridade</th>
                       <th className="num">Resolvidos</th>
                       <th className="num">SLA médio</th>
                       <th className="num">SLA mediano</th>
@@ -624,7 +655,12 @@ export default function TicketsView() {
               </div>
               <div className="note-inline tk-note">
                 SLA de resolução = &quot;Atualizado em&quot; menos &quot;Criado em&quot; dos tickets resolvidos (a exportação não traz a data exata de resolução). Tempo sem
-                atualização = referência de tempo menos &quot;Atualizado em&quot; dos tickets em aberto.
+                atualização = referência de tempo menos &quot;Atualizado em&quot; dos tickets em aberto. Metas de SLA por prioridade:{" "}
+                {PRI_KEYS.filter((k) => metaOf(k, metas) != null)
+                  .map((k) => `${k} ${fmtHours(metaOf(k, metas))}`)
+                  .join(", ")}{" "}
+                (editáveis em Ajustes ⚙️ &gt; Tickets). O nível (N1–N4) não altera a meta. Em aberto: vale a coluna SLA da planilha; quando ela vem
+                vazia, o ticket conta como estourado se já passou da meta da prioridade desde a criação.
               </div>
             </section>
 
@@ -687,7 +723,7 @@ export default function TicketsView() {
                     <table className="tk-table tk-heat">
                       <thead>
                         <tr>
-                          <th>Criticidade</th>
+                          <th>Prioridade</th>
                           {BUCKETS.map((b) => (
                             <th key={b[1]} className="center">
                               {b[1]}
@@ -781,7 +817,7 @@ export default function TicketsView() {
                       rows.slice(curPage * PAGE_SIZE, (curPage + 1) * PAGE_SIZE).map((x, i) => <TicketRow key={`${x.t.id}-${i}`} x={x} />)
                     ) : (
                       <tr>
-                        <td colSpan={11} className="hint">
+                        <td colSpan={COLS_T.length} className="hint">
                           Nenhum ticket com os filtros atuais.
                         </td>
                       </tr>
@@ -887,7 +923,10 @@ function TicketRow({ x }: { x: Derived }) {
         {t.titulo}
       </td>
       <td>{t.cliente}</td>
-      <td>{t.pri === "—" ? "—" : <PriTag p={t.pri} />}</td>
+      <td title={x.meta != null ? `Meta de SLA ${t.pri}: ${fmtHours(x.meta)}` : "Sem prioridade: sem meta de SLA"}>
+        {t.pri === "—" ? "—" : <PriTag p={t.pri} />}
+      </td>
+      <td className={t.nivel === SEM_NIVEL ? "faint" : ""}>{t.nivel}</td>
       <td>{t.etapa}</td>
       <td>
         {x.res ? (
@@ -895,7 +934,14 @@ function TicketRow({ x }: { x: Derived }) {
         ) : (
           <span className="tk-badge open">Em aberto</span>
         )}
-        {x.late && <span className="tk-badge late">SLA estourado</span>}
+        {x.late && (
+          <span
+            className="tk-badge late"
+            title={x.slaSrc === "meta" ? `A planilha não trouxe o SLA: calculado pela meta da prioridade (${fmtHours(x.meta)})` : "SLA informado na planilha"}
+          >
+            SLA estourado{x.slaSrc === "meta" ? " *" : ""}
+          </span>
+        )}
       </td>
       <td>{t.agente}</td>
       <td className="mono">{fmtDate(t.c)}</td>
@@ -912,7 +958,7 @@ function TicketRow({ x }: { x: Derived }) {
       <td className="mono">
         {x.res ? (
           <>
-            <span className={x.inSla === true ? "tk-ok" : x.inSla === false ? "tk-over" : ""} title={x.meta != null ? `Meta ${t.pri}: ${x.meta}h` : "Sem meta (sem prioridade)"}>
+            <span className={x.inSla === true ? "tk-ok" : x.inSla === false ? "tk-over" : ""} title={x.meta != null ? `Meta da prioridade ${t.pri}: ${fmtHours(x.meta)}` : "Sem meta (sem prioridade)"}>
               {fmtHours(x.rt)}
             </span>
             {!x.useSla && (
