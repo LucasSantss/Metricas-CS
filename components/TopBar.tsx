@@ -7,6 +7,7 @@ const NAV = [
   { href: "/", icon: "📋", title: "Termômetro operacional" },
   { href: "/percentis", icon: "📊", title: "Percentis (P50/P75/P90)" },
   { href: "/tickets", icon: "🎫", title: "Painel de tickets" },
+  { href: "/relatorio-tickets", icon: "📝", title: "Relatório semanal de tickets" },
 ];
 
 type Props = {

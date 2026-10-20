@@ -121,6 +121,19 @@ export async function ensureSchema() {
     ALTER TABLE app_settings ADD COLUMN IF NOT EXISTS ticket_sla_p3_minutes INT NOT NULL DEFAULT 10080
   `;
   await sql`
+    CREATE TABLE IF NOT EXISTS ticket_reports (
+      week_start DATE PRIMARY KEY,
+      generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      data JSONB NOT NULL,
+      ai JSONB,
+      ai_error TEXT,
+      model TEXT
+    )
+  `;
+  await sql`
+    ALTER TABLE ticket_reports ADD COLUMN IF NOT EXISTS ai_input_hash TEXT
+  `;
+  await sql`
     INSERT INTO app_settings (id) VALUES (1)
     ON CONFLICT (id) DO NOTHING
   `;
@@ -297,4 +310,67 @@ export async function deleteDepartment(id: number) {
   const sql = getSql();
   await ensureSchema();
   await sql`DELETE FROM departments WHERE id = ${id}`;
+}
+
+/* ---------- Relatório de tickets (um por semana) ---------- */
+
+export type TicketReportRow = {
+  weekStart: string; // "YYYY-MM-DD", segunda-feira
+  generatedAt: string;
+  data: unknown;
+  ai: unknown | null;
+  aiError: string | null;
+  model: string | null;
+  /** impressão digital do que foi mandado pra IA — igual = texto reaproveitado sem nova chamada */
+  aiInputHash: string | null;
+};
+
+export async function saveTicketReport(r: {
+  weekStart: string;
+  data: unknown;
+  ai: unknown | null;
+  aiError: string | null;
+  model: string | null;
+  aiInputHash: string | null;
+}) {
+  const sql = getSql();
+  await ensureSchema();
+  await sql`
+    INSERT INTO ticket_reports (week_start, generated_at, data, ai, ai_error, model, ai_input_hash)
+    VALUES (${r.weekStart}, now(), ${JSON.stringify(r.data)}::jsonb, ${r.ai == null ? null : JSON.stringify(r.ai)}::jsonb, ${r.aiError}, ${r.model}, ${r.aiInputHash})
+    ON CONFLICT (week_start) DO UPDATE SET
+      generated_at = now(), data = EXCLUDED.data, ai = EXCLUDED.ai, ai_error = EXCLUDED.ai_error,
+      model = EXCLUDED.model, ai_input_hash = EXCLUDED.ai_input_hash
+  `;
+}
+
+export async function getTicketReport(weekStart: string): Promise<TicketReportRow | null> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql`
+    SELECT week_start::text AS week_start, generated_at, data, ai, ai_error, model, ai_input_hash
+    FROM ticket_reports WHERE week_start = ${weekStart}
+  `;
+  const row = rows[0] as any;
+  if (!row) return null;
+  return {
+    weekStart: row.week_start,
+    generatedAt: new Date(row.generated_at).toISOString(),
+    data: row.data,
+    ai: row.ai,
+    aiError: row.ai_error,
+    model: row.model,
+    aiInputHash: row.ai_input_hash ?? null,
+  };
+}
+
+/** Semanas com relatório gerado, da mais recente pra mais antiga (sem o conteúdo). */
+export async function listTicketReports(): Promise<{ weekStart: string; generatedAt: string; hasAi: boolean }[]> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql`
+    SELECT week_start::text AS week_start, generated_at, ai IS NOT NULL AS has_ai
+    FROM ticket_reports ORDER BY week_start DESC LIMIT 104
+  `;
+  return rows.map((r: any) => ({ weekStart: r.week_start, generatedAt: new Date(r.generated_at).toISOString(), hasAi: r.has_ai }));
 }

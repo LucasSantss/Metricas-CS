@@ -750,3 +750,25 @@ footer{ margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); 
 @media (max-width: 600px){
   .sla-goal-head, .sla-goal-row{ grid-template-columns: 1fr; gap: 4px; }
 }
+
+/* RELATÓRIO DE TICKETS (/relatorio-tickets) — reaproveita os cartões e tabelas do painel (.tk-*) */
+.rp-kpis .rp-static{ cursor: default; }
+.rp-kpis .rp-static:hover{ background: transparent; }
+.rp-delta{ font-family:'IBM Plex Mono', monospace; font-size: 11px; }
+.rp-delta.good{ color: var(--good); }
+.rp-delta.bad{ color: var(--bad); }
+.rp-delta.flat{ color: var(--text-faint); }
+.rp-par{ font-size: 13.5px; color: var(--text); line-height: 1.6; }
+.rp-par + .rp-par{ margin-top: 10px; }
+.rp-themes{ display:flex; flex-direction:column; gap: 10px; }
+.rp-theme{ border: 1px solid var(--line); border-radius: 8px; background: var(--panel-2); padding: 12px 14px; display:flex; flex-direction:column; gap: 6px; }
+.rp-theme-head{ display:flex; align-items:center; gap: 10px; flex-wrap: wrap; font-size: 13.5px; }
+.rp-impact{ font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.rp-impact.alto{ color: var(--bad); border-color: var(--bad); background: rgba(240,102,90,0.08); }
+.rp-impact.medio{ color: var(--warn); border-color: var(--warn); background: rgba(244,184,96,0.08); }
+.rp-impact.baixo{ color: var(--text-dim); }
+.rp-ids{ display:flex; flex-wrap: wrap; gap: 6px 12px; font-size: 12px; }
+.rp-list{ display:flex; flex-direction:column; gap: 8px; padding-left: 18px; font-size: 13.5px; line-height: 1.55; }
+.rp-gen{ align-self: flex-end; }
+.rp-foot{ padding: 0; margin-top: 8px; }
+.rp-ai-warn{ color: var(--warn); margin-bottom: 10px; }
