@@ -20,6 +20,9 @@ let pendingDir: NavDirection | null = null;
 let ghost: HTMLElement | null = null;
 let fallbackTimer: number | undefined;
 
+/** true enquanto uma troca de tela está em andamento (usado pelo app/template.tsx). */
+export const isNavigating = () => pendingDir !== null;
+
 /** Copia a tela atual (com os valores dos campos) pra uma camada fixa no mesmo lugar. */
 function makeGhost(wrap: HTMLElement, dir: NavDirection) {
   const rect = wrap.getBoundingClientRect();
