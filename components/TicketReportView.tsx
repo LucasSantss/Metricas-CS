@@ -10,6 +10,7 @@ import type { ReportAi, ReportData, ReportTheme, WeekTotals } from "@/lib/ticket
 // Mesmo valor de REPORT_VERSION em lib/ticketReport.ts (que não pode ser importado aqui: roda só no servidor).
 const REPORT_VERSION = 2;
 import { PRI, TICKET_URL, fmtHours, pct, priLabel } from "@/lib/tickets";
+import { CACHE_TTL, cachedJson, invalidateCached } from "@/lib/clientCache";
 
 type Report = { weekStart: string; generatedAt: string; data: ReportData; ai: ReportAi | null; aiError: string | null; model: string | null };
 type ListItem = { weekStart: string; generatedAt: string; hasAi: boolean };
@@ -96,13 +97,10 @@ export default function TicketReportView() {
   const [departments, setDepartments] = useState<DepartmentDto[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const loadConfig = useCallback(async () => {
-    const res = await fetch("/api/config");
-    setConfig(await res.json());
+    setConfig((await cachedJson("/api/config", CACHE_TTL.config)).data);
   }, []);
   const loadDepartments = useCallback(async () => {
-    const res = await fetch("/api/departments");
-    const json = await res.json();
-    setDepartments(json.departments ?? []);
+    setDepartments((await cachedJson("/api/departments", CACHE_TTL.config)).data?.departments ?? []);
   }, []);
   useEffect(() => {
     loadConfig();
@@ -120,10 +118,11 @@ export default function TicketReportView() {
   const [err, setErr] = useState("");
   const [notice, setNotice] = useState("");
 
-  const loadList = useCallback(async () => {
-    const res = await fetch("/api/ticket-reports", { cache: "no-store" });
-    const json = await res.json();
-    if (!res.ok) throw new Error(json.error ?? "Falha ao listar relatórios");
+  // lista e relatórios com cache de 5 min (normalmente já pré-carregados — lib/preload.ts)
+  const loadList = useCallback(async (force = false) => {
+    const r = await cachedJson("/api/ticket-reports", CACHE_TTL.ticketReports, { force });
+    const json = r.data;
+    if (!r.ok) throw new Error(json?.error ?? "Falha ao listar relatórios");
     setList(json.reports);
     setLastWeek(json.lastCompleteWeek);
     setCurrentWeek(json.currentWeek);
@@ -136,11 +135,10 @@ export default function TicketReportView() {
     setNotice("");
     setLoading(true);
     try {
-      const res = await fetch(`/api/ticket-reports?week=${w}`, { cache: "no-store" });
-      const json = await res.json();
-      if (res.status === 404) setReport(null);
-      else if (!res.ok) throw new Error(json.error ?? "Falha ao carregar o relatório");
-      else setReport(json);
+      const r = await cachedJson(`/api/ticket-reports?week=${w}`, CACHE_TTL.ticketReports);
+      if (r.status === 404) setReport(null);
+      else if (!r.ok) throw new Error(r.data?.error ?? "Falha ao carregar o relatório");
+      else setReport(r.data);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -157,7 +155,7 @@ export default function TicketReportView() {
       });
   }, [loadList, loadReport]);
 
-  // Gera na hora do clique, independente do cron de segunda (que gera a semana completa por cima depois).
+  // Gera na hora do clique, independente do cron diário das 9h (que atualiza a semana atual e fecha a anterior na segunda).
   async function generate(w: string) {
     setGenerating(true);
     setErr("");
@@ -171,6 +169,7 @@ export default function TicketReportView() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Falha ao gerar o relatório");
+      invalidateCached("/api/ticket-reports"); // lista e relatórios mudaram
       setReport(json);
       setNotice(
         json.notice ??
@@ -236,7 +235,7 @@ export default function TicketReportView() {
           <div className="subtitle">
             {report
               ? `Gerado em ${fmtWhen(report.generatedAt)}`
-              : "Gerado automaticamente toda segunda-feira às 9h com a semana anterior"}
+              : "Atualizado automaticamente todo dia às 9h com a semana em andamento"}
           </div>
         </header>
 
@@ -246,8 +245,8 @@ export default function TicketReportView() {
           <div className="callout warn">
             <span className="dot" />
             <span className="body">
-              <b>Relatório parcial:</b> a semana ainda não terminou, os números vão até {fmtWhen(report.generatedAt)}. Na segunda às 8h o relatório
-              completo desta semana é gerado automaticamente e substitui este.
+              <b>Relatório parcial:</b> a semana ainda não terminou, os números vão até {fmtWhen(report.generatedAt)}. Ele é atualizado
+              automaticamente todo dia às 9h, e na segunda seguinte o relatório completo da semana substitui este.
             </span>
           </div>
         )}
@@ -256,7 +255,7 @@ export default function TicketReportView() {
           <div className="tk-panel">
             <div className="tk-body">
               <p className="hint">
-                O relatório da semana {week && weekText(week)} ainda não foi gerado. Ele é gerado sozinho toda segunda às 8h; para gerar agora, clique
+                O relatório da semana {week && weekText(week)} ainda não foi gerado. A semana em andamento é atualizada sozinha todo dia às 9h; para gerar agora, clique
                 em {week === currentWeek ? <>&quot;Gerar agora&quot; (sai parcial, com os dados até o momento)</> : <>&quot;Gerar esta semana&quot;</>}.
               </p>
             </div>

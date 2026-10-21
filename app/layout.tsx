@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import "@flaticon/flaticon-uicons/css/regular/rounded.css";
 import "./globals.css";
+import BrandBackground from "@/components/BrandBackground";
+import SplashScreen from "@/components/SplashScreen";
+import { SPLASH_SCRIPT } from "@/lib/splash";
 
 export const metadata: Metadata = {
   title: "Termômetro Operacional",
@@ -8,8 +12,16 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pt-BR">
-      <body>{children}</body>
+    // suppressHydrationWarning: o script abaixo pode pôr a classe "splash" no <html> antes do React assumir
+    <html lang="pt-BR" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: SPLASH_SCRIPT }} />
+      </head>
+      <body>
+        <BrandBackground />
+        <SplashScreen />
+        {children}
+      </body>
     </html>
   );
 }

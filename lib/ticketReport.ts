@@ -101,7 +101,7 @@ export type ReportData = {
   v: number;
   weekStart: string;
   weekLabel: string;
-  /** semana em andamento: números só até `generatedAt` (o cron de segunda gera a versão completa por cima) */
+  /** semana em andamento: números só até `generatedAt` (o cron diário das 9h atualiza; na segunda, a versão completa substitui) */
   partial: boolean;
   generatedAt: string;
   snapshotAt: string | null;

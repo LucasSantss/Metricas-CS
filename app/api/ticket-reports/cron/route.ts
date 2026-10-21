@@ -1,35 +1,60 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTicketReport } from "@/lib/db";
-import { REPORT_VERSION, generateTicketReport, lastCompleteWeek, type ReportData } from "@/lib/ticketReport";
+import { REPORT_VERSION, generateTicketReport, lastCompleteWeek, weekStartOf, type ReportData } from "@/lib/ticketReport";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-// busca no bot (~2s) + Gemini (até 240s) — 300s é o máximo do plano Hobby com Fluid compute
+// até 2 relatórios (semana anterior + atual), cada um com busca no bot + Gemini — 300s é o máximo do Hobby com Fluid compute
 export const maxDuration = 300;
 
 /**
- * Agendado no vercel.json (segunda de manhã): gera o relatório da semana que
- * acabou de terminar. A Vercel manda `Authorization: Bearer <CRON_SECRET>`
- * quando a env var CRON_SECRET existe — sem ela configurada, a rota recusa,
- * pra ninguém disparar o Gemini de fora. Se a semana já tem relatório completo
- * (não parcial) com texto, não gera de novo.
+ * Agendado no vercel.json todo dia às 12:00 UTC (09:00 de Brasília):
+ * 1. fecha a semana anterior, se ela ainda não tem relatório completo com texto
+ *    (na prática, só na segunda — nos outros dias isso é pulado);
+ * 2. atualiza o relatório da semana atual, parcial até a hora da execução.
+ * Se os tickets da semana não mudaram desde a última geração, o texto da IA é
+ * reaproveitado sem nova consulta (ver generateTicketReport).
+ *
+ * A Vercel manda `Authorization: Bearer <CRON_SECRET>` quando a env var
+ * CRON_SECRET existe — sem ela configurada, a rota recusa, pra ninguém
+ * disparar o Gemini de fora.
  */
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "não autorizado" }, { status: 401 });
   }
+
+  const result: Record<string, unknown> = {};
+  let failed = false;
+
+  // 1. semana anterior completa
+  const prevWeek = lastCompleteWeek();
   try {
-    const week = lastCompleteWeek();
-    const existing = await getTicketReport(week);
+    const existing = await getTicketReport(prevWeek);
     const data = existing?.data as ReportData | null;
     if (existing?.ai && data?.v === REPORT_VERSION && !data.partial) {
-      return NextResponse.json({ ok: true, week, skipped: "relatório completo já existe" });
+      result[prevWeek] = { skipped: "relatório completo já existe" };
+    } else {
+      const r = await generateTicketReport(prevWeek);
+      result[prevWeek] = { ai: r.ai != null, aiReused: r.aiReused, aiError: r.aiError };
     }
-    const r = await generateTicketReport(week);
-    return NextResponse.json({ ok: true, week, ai: r.ai != null, aiReused: r.aiReused, aiError: r.aiError });
   } catch (err: any) {
-    console.error("Falha ao gerar o relatório semanal de tickets:", err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    failed = true;
+    console.error(`Falha ao fechar o relatório da semana ${prevWeek}:`, err);
+    result[prevWeek] = { error: err.message };
   }
+
+  // 2. semana atual (parcial até agora) — roda mesmo se a anterior falhou
+  const curWeek = weekStartOf(new Date());
+  try {
+    const r = await generateTicketReport(curWeek);
+    result[curWeek] = { partial: true, ai: r.ai != null, aiReused: r.aiReused, aiError: r.aiError };
+  } catch (err: any) {
+    failed = true;
+    console.error(`Falha ao atualizar o relatório da semana ${curWeek}:`, err);
+    result[curWeek] = { error: err.message };
+  }
+
+  return NextResponse.json({ ok: !failed, ...result }, { status: failed ? 500 : 200 });
 }

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TopBar from "./TopBar";
+import Icon from "./Icon";
+import { CACHE_TTL, cachedJson, invalidateCached } from "@/lib/clientCache";
 import SettingsModal from "./SettingsModal";
 import SettingsPanel from "./SettingsPanel";
 import type { ConfigResponse, DepartmentDto } from "@/lib/types";
@@ -148,13 +150,10 @@ export default function TicketsView() {
   const [departments, setDepartments] = useState<DepartmentDto[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const loadConfig = useCallback(async () => {
-    const res = await fetch("/api/config");
-    setConfig(await res.json());
+    setConfig((await cachedJson("/api/config", CACHE_TTL.config)).data);
   }, []);
   const loadDepartments = useCallback(async () => {
-    const res = await fetch("/api/departments");
-    const json = await res.json();
-    setDepartments(json.departments ?? []);
+    setDepartments((await cachedJson("/api/departments", CACHE_TTL.config)).data?.departments ?? []);
   }, []);
   useEffect(() => {
     loadConfig();
@@ -229,14 +228,19 @@ export default function TicketsView() {
       if (!background) setErr("");
       (background ? setSyncing : setLoadingSoftcs)(true);
       try {
-        const res = await fetch(`/api/tickets/softcs${refresh ? "?refresh=1" : ""}`, { cache: "no-store" });
-        const json = await res.json().catch(() => null);
-        if (!res.ok) throw new Error(json?.error ?? `Falha ao buscar tickets (HTTP ${res.status}).`);
+        // Ao abrir, aproveita o cache de 2 min (normalmente já pré-carregado — lib/preload.ts);
+        // a atualização automática e o "Atualizar agora" sempre buscam de novo.
+        const r = refresh
+          ? await cachedJson("/api/tickets/softcs?refresh=1", 0, { force: true })
+          : await cachedJson("/api/tickets/softcs", CACHE_TTL.tickets, { force: background });
+        const json = r.data;
+        if (!r.ok) throw new Error(json?.error ?? `Falha ao buscar tickets (HTTP ${r.status}).`);
+        if (refresh) invalidateCached("/api/tickets/softcs");
         // Carga automática (ao abrir/em segundo plano) não passa por cima de
         // uma planilha que o usuário carregou enquanto a busca rodava.
         if ((auto || background) && source.current === "xlsx") return;
         const loaded = { name: SOFTCS_NAME, ...parseTicketsApi(json) };
-        lastSoftcsLoad.current = Date.now();
+        lastSoftcsLoad.current = r.at;
         if (source.current === "softcs") {
           // Já estava vendo a SoftCS: troca só os dados, mantendo filtros,
           // página, ordenação e recortes do jeito que o usuário deixou.
@@ -775,7 +779,7 @@ export default function TicketsView() {
                 {PRI_KEYS.filter((k) => metaOf(k, metas) != null)
                   .map((k) => `${k} ${fmtHours(metaOf(k, metas))}`)
                   .join(", ")}{" "}
-                (editáveis em Ajustes ⚙️ &gt; Tickets). O nível (N1–N4) não altera a meta. Em aberto: vale a coluna SLA da planilha; quando ela vem
+                (editáveis em Ajustes <Icon name="settings" /> &gt; Tickets). O nível (N1–N4) não altera a meta. Em aberto: vale a coluna SLA da planilha; quando ela vem
                 vazia, o ticket conta como estourado se já passou da meta da prioridade desde a criação.
               </div>
             </section>

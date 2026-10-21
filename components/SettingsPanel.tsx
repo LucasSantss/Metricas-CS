@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ConfigResponse, DepartmentDto } from "@/lib/types";
+import { invalidateCached } from "@/lib/clientCache";
 
 type Props = {
   config: ConfigResponse | null;
@@ -63,6 +64,19 @@ function toDraft(d: DepartmentDto): DraftDept {
 }
 
 export default function SettingsPanel({ config, departments, onConfigSaved, onDepartmentsChanged, initialTab = "atendimentos" }: Props) {
+  // Depois de salvar, descarta o cache das telas (lib/clientCache.ts) pra ninguém ver valor antigo.
+  // Metas de setor e de SLA mudam os números de Percentis e do Relatório de tickets também.
+  const configSaved = () => {
+    invalidateCached("/api/config");
+    invalidateCached("/api/percentiles");
+    invalidateCached("/api/ticket-reports");
+    onConfigSaved();
+  };
+  const departmentsChanged = () => {
+    invalidateCached("/api/departments");
+    invalidateCached("/api/percentiles");
+    onDepartmentsChanged();
+  };
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [slaDraft, setSlaDraft] = useState<Record<SlaKey, number>>({ ...DEFAULT_SLA, ...config?.ticketSlaHours });
   const [savingSla, setSavingSla] = useState(false);
@@ -96,7 +110,7 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Falha ao salvar");
-      onConfigSaved();
+      configSaved();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -115,7 +129,7 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Falha ao salvar metas de SLA");
-      onConfigSaved();
+      configSaved();
       setSlaSaved(true);
       setTimeout(() => setSlaSaved(false), 1500);
     } catch (e: any) {
@@ -154,7 +168,7 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Falha ao salvar setor");
-      onDepartmentsChanged();
+      departmentsChanged();
       setSavedFlashId(d.id);
       setTimeout(() => setSavedFlashId((cur) => (cur === d.id ? null : cur)), 1500);
     } catch (e: any) {
@@ -168,7 +182,7 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
       const res = await fetch(`/api/departments?id=${id}`, { method: "DELETE" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Falha ao remover setor");
-      onDepartmentsChanged();
+      departmentsChanged();
     } catch (e: any) {
       setError(e.message);
     }
@@ -181,7 +195,7 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
       const res = await fetch("/api/departments/seed", { method: "POST" });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Falha ao carregar setores padrão");
-      onDepartmentsChanged();
+      departmentsChanged();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -211,7 +225,7 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
       body: JSON.stringify({ departmentId: d.departmentId, name: d.name, sortOrder: drafts.length }),
     });
     setDiscovered((arr) => arr.filter((x) => x.departmentId !== d.departmentId));
-    onDepartmentsChanged();
+    departmentsChanged();
   }
 
   return (

@@ -1,5 +1,5 @@
 {
   "crons": [
-    { "path": "/api/ticket-reports/cron", "schedule": "0 11 * * 1" }
+    { "path": "/api/ticket-reports/cron", "schedule": "0 12 * * *" }
   ]
 }

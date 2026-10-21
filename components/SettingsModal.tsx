@@ -29,7 +29,16 @@ export default function SettingsModal({ open, onClose, children }: Props) {
             Fechar
           </button>
         </div>
-        <div className="modal-body">{children}</div>
+        <div className="modal-body">
+          {children}
+          {/* crédito exigido pela licença gratuita dos ícones */}
+          <div className="modal-credit">
+            Ícones:{" "}
+            <a href="https://www.flaticon.com/uicons" target="_blank" rel="noopener noreferrer">
+              Uicons by Flaticon
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   );

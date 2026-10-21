@@ -17,7 +17,9 @@
 
 *{box-sizing:border-box;margin:0;padding:0;}
 
-html, body{ background: var(--bg); overflow-x: hidden; }
+html{ background: var(--bg); }
+/* body sem fundo próprio: o fundo animado (.brand-bg, z-index -1) fica visível por trás do conteúdo */
+html, body{ overflow-x: hidden; }
 
 body{
   color: var(--text);
@@ -772,3 +774,107 @@ footer{ margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); 
 .rp-gen{ align-self: flex-end; }
 .rp-foot{ padding: 0; margin-top: 8px; }
 .rp-ai-warn{ color: var(--warn); margin-bottom: 10px; }
+
+/* FUNDO ANIMADO no estilo da logo (components/BrandBackground.tsx) */
+.brand-bg{ position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: #14171d; }
+.brand-bg svg{ position: absolute; inset: -6%; width: 112%; height: 112%; }
+.brand-bg-veil{ position: absolute; inset: 0; background: linear-gradient(180deg, rgba(14,22,32,0.35) 0%, rgba(14,22,32,0.55) 100%); }
+.bb-layer{ transform-box: view-box; transform-origin: 50% 50%; will-change: transform; }
+.bb-slate-a{ animation: bbSlateA 42s ease-in-out infinite alternate; }
+.bb-slate-b{ animation: bbSlateB 34s ease-in-out infinite alternate; }
+.bb-blue{ animation: bbBlue 48s ease-in-out infinite alternate; }
+@keyframes bbSlateA{ from{ transform: translate(-1.5%, -1%) rotate(-1deg); } to{ transform: translate(1.5%, 1.5%) rotate(1.2deg); } }
+@keyframes bbSlateB{ from{ transform: translate(1%, 1%) rotate(0.8deg); } to{ transform: translate(-1.5%, -0.5%) rotate(-1.2deg); } }
+@keyframes bbBlue{ from{ transform: translate(2.5%, 1.5%) rotate(1.8deg); } to{ transform: translate(-2%, -1.5%) rotate(-1.5deg); } }
+/* com "reduzir movimento": as placas param, e a curva azul só "respira" (brilho), sem se mover */
+@media (prefers-reduced-motion: reduce){
+  .bb-layer{ animation: none; }
+  .bb-blue{ animation: bbBreath 9s ease-in-out infinite alternate; }
+}
+@keyframes bbBreath{ from{ opacity: .78; } to{ opacity: 1; } }
+
+/* ÍCONES (UIcons da Flaticon — components/Icon.tsx) */
+.ui-icon{ display:inline-flex; align-items:center; justify-content:center; line-height:1; font-size: 15px; vertical-align: -0.15em; }
+.topbar-icon-btn .ui-icon{ font-size: 16px; color: var(--text-dim); transition: color .15s, transform .15s; }
+.topbar-icon-btn:hover .ui-icon, .topbar-icon-btn.on .ui-icon{ color: var(--text); }
+.topbar-icon-btn:hover .ui-icon{ transform: translateY(-1px); }
+.topbar-icon-btn.on .ui-icon{ color: var(--accent); }
+.btn-icon{ display:inline-flex; align-items:center; gap: 6px; }
+.btn-icon .ui-icon{ font-size: 13px; }
+.ui-icon-spin{ animation: uiSpin .9s linear infinite; }
+@keyframes uiSpin{ to{ transform: rotate(360deg); } }
+.modal-credit{ padding: 10px 18px 14px; font-size: 11px; color: var(--text-faint); text-align: right; }
+.modal-credit a{ color: var(--text-dim); }
+
+/* TRANSIÇÃO ENTRE TELAS — "tela dividida" (lib/pageTransition.ts + components/TopBar.tsx)
+   No clique, a tela atual vira uma cópia fixa (.nav-ghost) que já dá um empurrãozinho pro lado;
+   quando a tela nova monta, a cópia sai inteira pela lateral e a nova entra pelo outro lado,
+   juntas e no mesmo ritmo, como duas metades se empurrando. A direção segue a ordem dos ícones.
+   Roda mesmo com "reduzir movimento" ligado no sistema (pedido explícito); a barra do topo e o
+   fundo ficam parados. */
+.nav-ghost{
+  position: fixed; z-index: 0; pointer-events: none;
+  transition: transform .28s cubic-bezier(.2,.7,.2,1), opacity .28s ease, filter .28s ease;
+  will-change: transform;
+}
+.nav-ghost .wrap{ margin: 0; max-width: none; }
+.nav-ghost-forward.nav-ghost-nudge{ transform: translateX(-3%); opacity: .9; }
+.nav-ghost-back.nav-ghost-nudge{ transform: translateX(3%); opacity: .9; }
+.nav-ghost.nav-ghost-out{
+  transition: transform .56s cubic-bezier(.65,0,.35,1), opacity .56s ease, filter .56s ease;
+  opacity: .35; filter: blur(1.5px);
+}
+.nav-ghost-forward.nav-ghost-out{ transform: translateX(-100%); }
+.nav-ghost-back.nav-ghost-out{ transform: translateX(100%); }
+/* borda da "divisão" entre as duas telas */
+.nav-ghost-forward .wrap{ box-shadow: 18px 0 32px -18px rgba(0,0,0,.55); }
+.nav-ghost-back .wrap{ box-shadow: -18px 0 32px -18px rgba(0,0,0,.55); }
+
+/* enquanto a tela nova carrega, a real fica escondida (a cópia, igual a ela, está por cima) */
+html[data-nav-leaving] .wrap:not(.nav-ghost-wrap){ visibility: hidden; }
+/* a tela nova entra pelo outro lado, no mesmo ritmo da saída */
+html[data-nav-enter="forward"] .page-enter .wrap{ animation: navWrapInForward .56s cubic-bezier(.65,0,.35,1) both; }
+html[data-nav-enter="back"] .page-enter .wrap{ animation: navWrapInBack .56s cubic-bezier(.65,0,.35,1) both; }
+@keyframes navWrapInForward{ from{ transform: translateX(100%); } }
+@keyframes navWrapInBack{ from{ transform: translateX(-100%); } }
+
+/* entrada em cascata das seções: só na primeira abertura da tela (na troca, quem anima é a divisão) */
+/* backwards (e não both): depois de entrar não sobra transform, que prenderia dropdowns atrás das seções seguintes */
+.page-enter .wrap > *{ animation: pageIn .5s cubic-bezier(.2,.75,.2,1) backwards; }
+html[data-nav-enter] .page-enter .wrap > *{ animation: none; }
+.page-enter .wrap > *:nth-child(2){ animation-delay: .05s; }
+.page-enter .wrap > *:nth-child(3){ animation-delay: .1s; }
+.page-enter .wrap > *:nth-child(4){ animation-delay: .15s; }
+.page-enter .wrap > *:nth-child(5){ animation-delay: .2s; }
+.page-enter .wrap > *:nth-child(n+6){ animation-delay: .25s; }
+@keyframes pageIn{ from{ opacity: 0; transform: translateY(16px); } }
+@media (prefers-reduced-motion: reduce){
+  .page-enter .wrap > *{ animation-name: pageFadeIn; }
+}
+@keyframes pageFadeIn{ from{ opacity: 0; } }
+
+/* TELA INICIAL (components/SplashScreen.tsx) — 1 s no primeiro acesso da sessão, enquanto as abas pré-carregam */
+.splash-screen{ display: none; }
+html.splash .splash-screen{
+  display: flex; position: fixed; inset: 0; z-index: 2000; align-items: center; justify-content: center;
+  background: radial-gradient(120% 90% at 85% 100%, rgba(36,18,230,.38) 0%, rgba(20,23,29,.0) 60%), rgba(14,17,23,.9);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  transition: opacity .42s ease, visibility .42s ease;
+  /* garantia: se o JavaScript falhar, a tela inicial some sozinha depois de 4 s */
+  animation: splashFailsafe .42s ease 4s forwards;
+}
+html.splash-out .splash-screen{ opacity: 0; visibility: hidden; }
+@keyframes splashFailsafe{ to{ opacity: 0; visibility: hidden; } }
+.splash-card{ display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.splash-logo{
+  width: 112px; height: 112px; border-radius: 26px; object-fit: cover;
+  box-shadow: 0 18px 50px rgba(20,8,184,.45), 0 0 0 1px rgba(255,255,255,.06);
+  animation: splashPop .7s cubic-bezier(.2,.8,.2,1) both;
+}
+.splash-title{ margin-top: 10px; font-size: 22px; font-weight: 700; letter-spacing: -.01em; animation: splashUp .6s .12s cubic-bezier(.2,.8,.2,1) both; }
+.splash-sub{ font-size: 13px; color: var(--text-dim); animation: splashUp .6s .2s cubic-bezier(.2,.8,.2,1) both; }
+.splash-bar{ margin-top: 14px; width: 180px; height: 3px; border-radius: 999px; background: rgba(255,255,255,.1); overflow: hidden; animation: splashUp .6s .26s cubic-bezier(.2,.8,.2,1) both; }
+.splash-bar i{ display: block; height: 100%; background: linear-gradient(90deg, #2412e6, var(--accent)); transform-origin: left; animation: splashBar 1s cubic-bezier(.4,0,.2,1) both; }
+@keyframes splashPop{ from{ opacity: 0; transform: scale(.86); } }
+@keyframes splashUp{ from{ opacity: 0; transform: translateY(8px); } }
+@keyframes splashBar{ from{ transform: scaleX(0); } }

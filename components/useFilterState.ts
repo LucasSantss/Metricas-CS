@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { ConfigResponse, DepartmentDto, PeriodAttendantDto, WeekDto } from "@/lib/types";
 import { readAttendantFilter, writeAttendantFilter } from "@/lib/attendantFilter";
 import { readDashboardPrefs, writeDashboardPrefs } from "@/lib/dashboardPrefs";
+import { CACHE_TTL, cachedJson } from "@/lib/clientCache";
 
 /**
  * Estado de filtros (ano/mês/semana/período/setores/atendente) compartilhado
@@ -43,15 +44,15 @@ export function useFilterState() {
 
   const [prefsLoaded, setPrefsLoaded] = useState(false);
 
+  // cache compartilhado entre as telas (lib/clientCache.ts); o modal de Ajustes invalida ao salvar
   const loadConfig = useCallback(async () => {
-    const res = await fetch("/api/config");
-    setConfig(await res.json());
+    const r = await cachedJson("/api/config", CACHE_TTL.config);
+    setConfig(r.data);
   }, []);
 
   const loadDepartments = useCallback(async () => {
-    const res = await fetch("/api/departments");
-    const json = await res.json();
-    setDepartments(json.departments ?? []);
+    const r = await cachedJson("/api/departments", CACHE_TTL.config);
+    setDepartments(r.data?.departments ?? []);
   }, []);
 
   useEffect(() => {
@@ -128,8 +129,7 @@ export function useFilterState() {
   useEffect(() => {
     if (!prefsLoaded || viewMode !== "week") return;
     (async () => {
-      const res = await fetch(`/api/weeks?year=${year}&month=${month}`);
-      const json = await res.json();
+      const json = (await cachedJson(`/api/weeks?year=${year}&month=${month}`, CACHE_TTL.config)).data ?? {};
       const list: WeekDto[] = json.weeks ?? [];
       setWeeks(list);
       if (list.length > 0 && !list.find((w) => w.mondayDate === weekStart)) {

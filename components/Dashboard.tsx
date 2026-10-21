@@ -8,6 +8,7 @@ import { useFilterState } from "./useFilterState";
 import SettingsPanel from "./SettingsPanel";
 import SettingsModal from "./SettingsModal";
 import TopBar from "./TopBar";
+import Icon from "./Icon";
 import DepartmentCard from "./DepartmentCard";
 import WeeklySummary from "./WeeklySummary";
 import FilterBar from "./FilterBar";
@@ -140,11 +141,13 @@ export default function Dashboard() {
           <div className="page-header-row">
             <h1>Termômetro Operacional</h1>
             <div className="page-header-actions">
-              <button className="btn small" onClick={copyLink}>
-                {linkCopied ? "Link copiado ✓" : "🔗 Copiar link"}
+              <button className="btn small btn-icon" onClick={copyLink}>
+                <Icon name={linkCopied ? "check" : "link"} />
+                {linkCopied ? "Link copiado" : "Copiar link"}
               </button>
-              <button className="btn small" disabled={loading || refreshing} onClick={() => loadReport(true)}>
-                {refreshing ? "Recarregando…" : "🔄 Recarregar"}
+              <button className="btn small btn-icon" disabled={loading || refreshing} onClick={() => loadReport(true)}>
+                <Icon name="refresh" className={refreshing ? "ui-icon-spin" : ""} />
+                {refreshing ? "Recarregando…" : "Recarregar"}
               </button>
             </div>
           </div>
@@ -177,7 +180,7 @@ export default function Dashboard() {
 
         {!f.configured && (
           <div className="error-box">
-            Configure a URL do chatbot e o token clicando no ícone de ajustes (⚙️) no topo da página para começar.
+            Configure a URL do chatbot e o token clicando no ícone de ajustes (<Icon name="settings" />) no topo da página para começar.
           </div>
         )}
         {error && <div className="error-box">{error}</div>}

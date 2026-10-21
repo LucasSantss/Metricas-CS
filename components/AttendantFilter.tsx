@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PeriodAttendantDto } from "@/lib/types";
+import Icon from "./Icon";
 
 type Props = {
   attendants: PeriodAttendantDto[];
@@ -41,8 +42,9 @@ export default function AttendantFilter({ attendants, selected, onChange }: Prop
 
   return (
     <div className="attendant-filter" ref={boxRef}>
-      <button type="button" className="btn small" onClick={() => setOpen((v) => !v)}>
-        👤 Atendente{selected.length > 0 ? ` (${selected.length})` : ": todos"}
+      <button type="button" className="btn small btn-icon" onClick={() => setOpen((v) => !v)}>
+        <Icon name="user" />
+        Atendente{selected.length > 0 ? ` (${selected.length})` : ": todos"}
       </button>
 
       {selectedNames.length > 0 && (

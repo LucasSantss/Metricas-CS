@@ -5,6 +5,8 @@ import { useFilterState } from "./useFilterState";
 import SettingsPanel from "./SettingsPanel";
 import SettingsModal from "./SettingsModal";
 import TopBar from "./TopBar";
+import Icon from "./Icon";
+import { CACHE_TTL, cachedJson } from "@/lib/clientCache";
 import FilterBar from "./FilterBar";
 import PercentileDeptCard from "./PercentileDeptCard";
 import PercentileDetailModal, { type P90Entry } from "./PercentileDetailModal";
@@ -57,12 +59,12 @@ export default function PercentilesView() {
     setLoading(true);
     const idsParam = deptIdsKey ? `&departmentIds=${deptIdsKey}` : "";
     const attendantsParam = attendantIdsKey ? `&attendantIds=${attendantIdsKey}` : "";
-    fetch(`/api/percentiles?${f.periodQuery}${idsParam}${attendantsParam}`)
-      .then(async (res) => {
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? "Falha ao carregar percentis");
-        setData(json);
-        f.setPeriodAttendants(json.periodAttendants ?? []);
+    // cache de 15 min (lib/clientCache.ts) — normalmente já pré-carregado ao abrir a plataforma
+    cachedJson(`/api/percentiles?${f.periodQuery}${idsParam}${attendantsParam}`, CACHE_TTL.percentiles)
+      .then((r) => {
+        if (!r.ok) throw new Error(r.data?.error ?? "Falha ao carregar percentis");
+        setData(r.data);
+        f.setPeriodAttendants(r.data.periodAttendants ?? []);
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
@@ -110,7 +112,7 @@ export default function PercentilesView() {
 
         {!f.configured && (
           <div className="error-box">
-            Configure a URL do chatbot e o token clicando no ícone de ajustes (⚙️) no topo da página para começar.
+            Configure a URL do chatbot e o token clicando no ícone de ajustes (<Icon name="settings" />) no topo da página para começar.
           </div>
         )}
         {error && <div className="error-box">{error}</div>}
