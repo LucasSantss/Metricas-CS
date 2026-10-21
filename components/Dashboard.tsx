@@ -26,14 +26,18 @@ type ReportWithRankings = ReportResult & {
 
 const GROUPED_LAYOUT_KEY = "termo:groupedByDept";
 
+// Último relatório exibido, guardado fora do componente: ao voltar pra aba, a tela já
+// nasce com ele (sem o instante em branco enquanto filtros e cache são lidos).
+let lastShown: { report: ReportWithRankings; savedAt: number } | null = null;
+
 export default function Dashboard() {
   const f = useFilterState();
 
-  const [report, setReport] = useState<ReportWithRankings | null>(null);
+  const [report, setReport] = useState<ReportWithRankings | null>(() => lastShown?.report ?? null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [reportSavedAt, setReportSavedAt] = useState<number | null>(null);
+  const [reportSavedAt, setReportSavedAt] = useState<number | null>(() => lastShown?.savedAt ?? null);
   const [linkCopied, setLinkCopied] = useState(false);
 
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -68,37 +72,49 @@ export default function Dashboard() {
     if (!f.config.chatbotUrl || !f.config.hasToken) setSettingsOpen(true);
   }, [f.config, checkedInitialConfig]);
 
+  /**
+   * Abrir a aba nunca "recarrega" a tela: com cache, mostra o cache na hora. Se ele passou dos
+   * 15 min, atualiza em silêncio (sem "Recarregando…") e só troca a tela se os dados mudaram.
+   * `force` = botão "Recarregar": busca de novo e mostra o indicador.
+   */
   const loadReport = useCallback(
     async (force = false) => {
       if (!f.prefsLoaded) return;
       if (f.viewMode === "week" && !f.weekStart) return;
       if (f.viewMode === "day" && !f.dayDate) return;
-      if (!f.config?.chatbotUrl || !f.config?.hasToken) return;
-      setError(null);
 
+      // o cache é lido antes de esperar os Ajustes carregarem, pra tela não ficar vazia nesse meio-tempo
       const cached = force ? null : readReportCache<ReportWithRankings>(f.periodKey, f.deptIdsArr, f.attendantIdsArr);
       if (cached) {
-        setReport(cached.report);
+        setReport((cur) => (cur && JSON.stringify(cur) === JSON.stringify(cached.report) ? cur : cached.report));
         setReportSavedAt(cached.savedAt);
         f.setPeriodAttendants(cached.report.periodAttendants ?? []);
+        lastShown = cached;
         if (isFresh(cached.savedAt)) return; // cache ainda fresco, não busca de novo
       }
 
-      if (cached) setRefreshing(true);
-      else setLoading(true);
+      if (!f.config?.chatbotUrl || !f.config?.hasToken) return;
+      setError(null);
+      const silent = Boolean(cached); // cache velho na tela: atualiza sem indicador
+      if (force) setRefreshing(true);
+      else if (!silent) setLoading(true);
       try {
         const idsParam = f.deptIdsArr && f.deptIdsArr.length > 0 ? `&departmentIds=${f.deptIdsArr.join(",")}` : "";
         const attendantsParam = f.attendantIdsArr ? `&attendantIds=${f.attendantIdsArr.join(",")}` : "";
         const res = await fetch(`/api/report?${f.periodQuery}${idsParam}${attendantsParam}`);
         const json = await res.json();
         if (!res.ok) throw new Error(json.error ?? "Falha ao carregar relatório");
-        setReport(json);
+        // só troca a tela se algo mudou — evita a "piscada" de re-desenhar os mesmos números
+        setReport((cur) => (cur && JSON.stringify(cur) === JSON.stringify(json) ? cur : json));
         f.setPeriodAttendants(json.periodAttendants ?? []);
         writeReportCache(f.periodKey, f.deptIdsArr, f.attendantIdsArr, json);
-        setReportSavedAt(Date.now());
+        const savedAt = Date.now();
+        setReportSavedAt(savedAt);
+        lastShown = { report: json, savedAt };
       } catch (e: any) {
-        setError(e.message);
-        if (!cached) setReport(null);
+        // atualização silenciosa que falhou: mantém o que está na tela, sem alarde
+        if (!silent || force) setError(e.message);
+        if (!cached && !silent) setReport(null);
       } finally {
         setLoading(false);
         setRefreshing(false);
