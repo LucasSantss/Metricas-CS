@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { preloadAll } from "@/lib/preload";
 import { SPLASH_KEY } from "@/lib/splash";
 const SPLASH_MS = 1000;
-const FADE_MS = 420;
+// logo crescendo até virar o fundo (.splash-hole no globals.css); ao fim, a página entra em cascata
+const EXIT_MS = 900;
 
 // roda uma vez por carregamento da página (o StrictMode do desenvolvimento monta duas vezes)
 let preloadStarted = false;
@@ -19,6 +20,8 @@ let preloadStarted = false;
 export default function SplashScreen() {
   const router = useRouter();
   const pathname = usePathname() ?? "/";
+  const logoRef = useRef<HTMLImageElement>(null);
+  const holeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const html = document.documentElement;
@@ -38,8 +41,11 @@ export default function SplashScreen() {
     // aqui: o JavaScript da página pode demorar pra carregar. Se o 1 s já passou, sai agora.
     const shownAt = (window as Window & { __splashAt?: number }).__splashAt ?? performance.now();
     const wait = Math.max(0, SPLASH_MS - (performance.now() - shownAt));
-    const t1 = window.setTimeout(() => html.classList.add("splash-out"), wait);
-    const t2 = window.setTimeout(() => html.classList.remove("splash", "splash-out"), wait + FADE_MS);
+    const t1 = window.setTimeout(() => {
+      openHole();
+      html.classList.add("splash-out");
+    }, wait);
+    const t2 = window.setTimeout(() => html.classList.remove("splash", "splash-out"), wait + EXIT_MS);
     return () => {
       window.clearTimeout(t1);
       window.clearTimeout(t2);
@@ -48,11 +54,34 @@ export default function SplashScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /**
+   * Saída: a "janela" (.splash-hole) nasce exatamente sobre a logo e cresce até passar das
+   * bordas da tela. Por ela aparece o fundo animado de verdade, então a logo parece crescer e
+   * virar o fundo da página, enquanto as letras dela somem. O tamanho final é calculado pela
+   * distância do centro da logo até o canto mais longe da tela.
+   */
+  function openHole() {
+    const logo = logoRef.current;
+    const hole = holeRef.current;
+    if (!logo || !hole) return;
+    const r = logo.getBoundingClientRect();
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    const far = Math.max(Math.hypot(cx, cy), Math.hypot(innerWidth - cx, cy), Math.hypot(cx, innerHeight - cy), Math.hypot(innerWidth - cx, innerHeight - cy));
+    const s = hole.style;
+    s.setProperty("--hx", `${r.left}px`);
+    s.setProperty("--hy", `${r.top}px`);
+    s.setProperty("--hs", `${r.width}px`);
+    s.setProperty("--hgrow", `${Math.ceil(far * 1.15 - r.width / 2)}px`);
+    s.setProperty("--lscale", String(Math.min(8, (far * 2) / r.width)));
+  }
+
   return (
     <div className="splash-screen" aria-hidden="true">
+      <div className="splash-hole" ref={holeRef} />
       <div className="splash-card">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/icon.jpg" alt="" className="splash-logo" width={112} height={112} />
+        <img ref={logoRef} src="/icon.jpg" alt="" className="splash-logo" width={112} height={112} />
         <div className="splash-title">CS Suporte</div>
         <div className="splash-sub">Métricas, percentis e tickets</div>
         <div className="splash-bar">

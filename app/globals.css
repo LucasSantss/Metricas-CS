@@ -859,15 +859,60 @@ html[data-nav-enter="back"] .page-enter .wrap{ animation: navWrapInBack .56s cub
 .splash-screen{ display: none; }
 html.splash .splash-screen{
   display: flex; position: fixed; inset: 0; z-index: 2000; align-items: center; justify-content: center;
-  background: radial-gradient(120% 90% at 85% 100%, rgba(36,18,230,.38) 0%, rgba(20,23,29,.0) 60%), rgba(14,17,23,.9);
-  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  transition: opacity .42s ease, visibility .42s ease;
+  background: rgba(14,17,23,.94);
   /* garantia: se o JavaScript falhar, a tela inicial some sozinha depois de 4 s */
   animation: splashFailsafe .42s ease 4s forwards;
 }
-html.splash-out .splash-screen{ opacity: 0; visibility: hidden; }
+/* brilho azul do canto: some logo no começo da saída */
+html.splash .splash-screen::before{
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(120% 90% at 85% 100%, rgba(36,18,230,.38) 0%, rgba(20,23,29,0) 60%);
+  transition: opacity .3s ease;
+}
 @keyframes splashFailsafe{ to{ opacity: 0; visibility: hidden; } }
-.splash-card{ display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+/* enquanto a tela inicial está aberta, a página fica escondida: a barra do topo some e a cascata
+   das seções (.page-enter) fica parada no primeiro quadro, pra começar só quando ela sair */
+html.splash .topbar{ opacity: 0; }
+.topbar{ transition: opacity .5s ease .05s; }
+html.splash .page-enter .wrap > *,
+html.splash .login-card{ animation-play-state: paused; }
+.login-card{ animation: pageIn .5s .1s cubic-bezier(.2,.75,.2,1) backwards; }
+
+/* SAÍDA: a logo vira uma "janela" (.splash-hole) que cresce até tomar a tela, mostrando o fundo
+   animado de verdade por trás. A cor escura da tela inicial passa a ser só a sombra gigante em volta
+   da janela, então tudo fora dela continua coberto até a janela passar das bordas. */
+.splash-hole{ display: none; }
+html.splash-out .splash-screen{ background: transparent; }
+html.splash-out .splash-screen::before{ opacity: 0; }
+html.splash-out .splash-hole{
+  display: block; position: fixed;
+  left: var(--hx); top: var(--hy); width: var(--hs); height: var(--hs);
+  border-radius: 26px;
+  box-shadow: 0 0 0 300vmax rgba(14,17,23,.94);
+  animation: splashHoleGrow .85s cubic-bezier(.7,0,.25,1) forwards;
+}
+@keyframes splashHoleGrow{
+  to{
+    left: calc(var(--hx) - var(--hgrow)); top: calc(var(--hy) - var(--hgrow));
+    width: calc(var(--hs) + 2 * var(--hgrow)); height: calc(var(--hs) + 2 * var(--hgrow));
+    border-radius: 50%;
+  }
+}
+/* a logo cresce junto com a janela e as letras se desfazem no fundo que aparece por trás */
+html.splash-out .splash-logo{
+  animation: splashLogoGrow .85s cubic-bezier(.7,0,.25,1) forwards;
+  box-shadow: none;
+}
+@keyframes splashLogoGrow{
+  0%{ transform: scale(1); opacity: 1; filter: blur(0); }
+  55%{ opacity: 0; filter: blur(6px); }
+  100%{ transform: scale(var(--lscale, 6)); opacity: 0; filter: blur(10px); }
+}
+html.splash-out .splash-title,
+html.splash-out .splash-sub,
+html.splash-out .splash-bar{ animation: splashTextOut .28s ease forwards; }
+@keyframes splashTextOut{ to{ opacity: 0; transform: translateY(6px); } }
+.splash-card{ position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .splash-logo{
   width: 112px; height: 112px; border-radius: 26px; object-fit: cover;
   box-shadow: 0 18px 50px rgba(20,8,184,.45), 0 0 0 1px rgba(255,255,255,.06);
