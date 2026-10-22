@@ -880,3 +880,28 @@ html.splash-out .splash-screen{ opacity: 0; visibility: hidden; }
 @keyframes splashPop{ from{ opacity: 0; transform: scale(.86); } }
 @keyframes splashUp{ from{ opacity: 0; transform: translateY(8px); } }
 @keyframes splashBar{ from{ transform: scaleX(0); } }
+
+/* LOGIN */
+.login-wrap{
+  min-height: 100vh;
+  display:flex; align-items:center; justify-content:center;
+  padding: 16px;
+}
+.login-card{
+  width: 100%; max-width: 360px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 28px 24px;
+  text-align: center;
+}
+.login-title{ font-size: 18px; font-weight: 600; }
+.login-sub{ font-size: 13px; color: var(--text-dim); margin: 6px 0 20px; }
+.login-error{
+  font-size: 12.5px; color: var(--bad);
+  border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent);
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
+  border-radius: 8px; padding: 8px 10px; margin-bottom: 16px;
+}
+.login-btn{ width: 100%; padding: 10px 14px; font-size: 14px; }
+.topbar-avatar-img{ width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); display:block; }

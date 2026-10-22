@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "@flaticon/flaticon-uicons/css/regular/rounded.css";
 import "./globals.css";
+import AuthProvider from "@/components/AuthProvider";
 import BrandBackground from "@/components/BrandBackground";
 import SplashScreen from "@/components/SplashScreen";
 import { SPLASH_SCRIPT } from "@/lib/splash";
@@ -20,7 +21,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body>
         <BrandBackground />
         <SplashScreen />
-        {children}
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

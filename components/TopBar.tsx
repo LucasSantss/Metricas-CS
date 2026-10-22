@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { signOut, useSession } from "next-auth/react";
 import Icon from "./Icon";
 import { markNavigated, navigateWithTransition } from "@/lib/pageTransition";
 
@@ -37,6 +38,7 @@ export default function TopBar({ breadcrumb, title, configured, onOpenSettings, 
   // ícone clicado acende na hora, antes da tela nova terminar de carregar
   const [clicked, setClicked] = useState<number | null>(null);
   const active = clicked ?? current;
+  const user = useSession().data?.user;
 
   // A barra monta junto com o conteúdo de verdade da tela (não com o "Carregando…" do
   // Suspense): é a hora de o fantasma sair e a tela nova entrar (lib/pageTransition.ts).
@@ -95,8 +97,21 @@ export default function TopBar({ breadcrumb, title, configured, onOpenSettings, 
             <Icon name="layers" />
           </button>
         )}
-        <button className="topbar-avatar" title="Perfil (em breve)" disabled>
-          <span className="topbar-avatar-circle">?</span>
+        <button
+          className="topbar-avatar"
+          title={user?.email ? `${user.email} — clique para sair` : "Sair"}
+          aria-label="Sair"
+          onClick={() => {
+            if (confirm("Sair da plataforma?")) signOut({ redirectTo: "/login" });
+          }}
+        >
+          {user?.image ? (
+            // foto do Google (lh3.googleusercontent.com): <img> simples, sem passar pelo next/image
+            // eslint-disable-next-line @next/next/no-img-element
+            <img className="topbar-avatar-img" src={user.image} alt="" referrerPolicy="no-referrer" />
+          ) : (
+            <span className="topbar-avatar-circle">{(user?.name ?? user?.email ?? "?").charAt(0).toUpperCase()}</span>
+          )}
         </button>
       </div>
     </div>
