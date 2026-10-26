@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { upsertDepartment } from "@/lib/db";
+import { requireAdmin } from "@/lib/admin";
 
 export const runtime = "nodejs";
 
@@ -18,6 +19,8 @@ const KNOWN_DEPARTMENTS = [
 // atendentes já configurados.
 export async function POST() {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
     const departments = await Promise.all(
       KNOWN_DEPARTMENTS.map((d, i) => upsertDepartment({ departmentId: d.departmentId, name: d.name, sortOrder: i }))
     );

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteDepartment, listDepartments, upsertDepartment } from "@/lib/db";
+import { requireAdmin } from "@/lib/admin";
 
 export const runtime = "nodejs";
 
@@ -14,6 +15,8 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
     const body = await req.json();
     if (!body.departmentId || !body.name) {
       return NextResponse.json({ error: "departmentId e name são obrigatórios" }, { status: 400 });
@@ -46,6 +49,8 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
     const id = Number(req.nextUrl.searchParams.get("id"));
     if (!id) return NextResponse.json({ error: "id inválido" }, { status: 400 });
     await deleteDepartment(id);

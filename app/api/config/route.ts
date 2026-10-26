@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings, saveSettings, type TicketSlaHours } from "@/lib/db";
+import { requireAdmin } from "@/lib/admin";
 
 export const runtime = "nodejs";
 
@@ -21,6 +22,8 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
     const body = await req.json();
     const input: { chatbotUrl?: string; bearerToken?: string; useBusinessHours?: boolean; getCurrent?: boolean; ticketSlaHours?: Partial<TicketSlaHours> } = {};
     if (typeof body.chatbotUrl === "string") input.chatbotUrl = body.chatbotUrl.trim();

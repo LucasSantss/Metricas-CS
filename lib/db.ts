@@ -134,6 +134,13 @@ export async function ensureSchema() {
     ALTER TABLE ticket_reports ADD COLUMN IF NOT EXISTS ai_input_hash TEXT
   `;
   await sql`
+    CREATE TABLE IF NOT EXISTS admins (
+      email TEXT PRIMARY KEY,
+      added_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
     INSERT INTO app_settings (id) VALUES (1)
     ON CONFLICT (id) DO NOTHING
   `;
@@ -373,4 +380,33 @@ export async function listTicketReports(): Promise<{ weekStart: string; generate
     FROM ticket_reports ORDER BY week_start DESC LIMIT 104
   `;
   return rows.map((r: any) => ({ weekStart: r.week_start, generatedAt: new Date(r.generated_at).toISOString(), hasAi: r.has_ai }));
+}
+
+// Administradores (lib/admin.ts): além do administrador fixo, os e-mails adicionados pela tela de Ajustes
+export type AdminRow = { email: string; addedBy: string | null; createdAt: string };
+
+export async function listAdminRows(): Promise<AdminRow[]> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql`SELECT email, added_by, created_at FROM admins ORDER BY created_at`;
+  return (rows as any[]).map((r) => ({ email: r.email, addedBy: r.added_by, createdAt: new Date(r.created_at).toISOString() }));
+}
+
+export async function isAdminRow(email: string): Promise<boolean> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql`SELECT 1 FROM admins WHERE email = ${email.toLowerCase()}`;
+  return rows.length > 0;
+}
+
+export async function insertAdmin(email: string, addedBy: string) {
+  const sql = getSql();
+  await ensureSchema();
+  await sql`INSERT INTO admins (email, added_by) VALUES (${email.toLowerCase()}, ${addedBy}) ON CONFLICT (email) DO NOTHING`;
+}
+
+export async function deleteAdmin(email: string) {
+  const sql = getSql();
+  await ensureSchema();
+  await sql`DELETE FROM admins WHERE email = ${email.toLowerCase()}`;
 }

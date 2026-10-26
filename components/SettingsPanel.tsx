@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ConfigResponse, DepartmentDto } from "@/lib/types";
 import { invalidateCached } from "@/lib/clientCache";
+import AdminsSettings from "./AdminsSettings";
 
 type Props = {
   config: ConfigResponse | null;
@@ -13,7 +14,7 @@ type Props = {
   initialTab?: SettingsTab;
 };
 
-type SettingsTab = "atendimentos" | "tickets";
+type SettingsTab = "atendimentos" | "tickets" | "admins";
 type SlaKey = "P0" | "P1" | "P2" | "P3";
 const SLA_KEYS: SlaKey[] = ["P0", "P1", "P2", "P3"];
 const SLA_LABELS: Record<SlaKey, string> = { P0: "P0 - Crítica", P1: "P1 - Alta", P2: "P2 - Média", P3: "P3 - Baixa" };
@@ -239,7 +240,12 @@ export default function SettingsPanel({ config, departments, onConfigSaved, onDe
         <button type="button" role="tab" aria-selected={tab === "tickets"} className={tab === "tickets" ? "on" : ""} onClick={() => setTab("tickets")}>
           Tickets
         </button>
+        <button type="button" role="tab" aria-selected={tab === "admins"} className={tab === "admins" ? "on" : ""} onClick={() => setTab("admins")}>
+          Administradores
+        </button>
       </div>
+
+      {tab === "admins" && <AdminsSettings />}
 
       {tab === "tickets" && (
         <section className="settings-section">

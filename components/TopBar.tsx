@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import Icon from "./Icon";
 import { markNavigated, navigateWithTransition } from "@/lib/pageTransition";
+import { useAdmin } from "./useAdmin";
 
 // Ícones: UIcons da Flaticon (regular rounded) — ver components/Icon.tsx
 const NAV = [
@@ -13,6 +14,8 @@ const NAV = [
   { href: "/percentis", icon: "chart-histogram", title: "Percentis (P50/P75/P90)" },
   { href: "/tickets", icon: "ticket", title: "Painel de tickets" },
   { href: "/relatorio-tickets", icon: "file-chart-line", title: "Relatório semanal de tickets" },
+  // aba temporária, só de administradores (components/ConversationsView.tsx, lib/admin.ts)
+  { href: "/conversas", icon: "comments", title: "Conversas — Esperando, Atendimentos e Automático (temporária)", adminOnly: true },
 ];
 
 // useLayoutEffect avisa a transição antes de a tela nova ser pintada (sem "piscar" no lugar final);
@@ -39,6 +42,8 @@ export default function TopBar({ breadcrumb, title, configured, onOpenSettings, 
   const [clicked, setClicked] = useState<number | null>(null);
   const active = clicked ?? current;
   const user = useSession().data?.user;
+  // Ajustes e Conversas só aparecem pra administradores (some enquanto carrega)
+  const isAdmin = useAdmin()?.isAdmin ?? false;
 
   // A barra monta junto com o conteúdo de verdade da tela (não com o "Carregando…" do
   // Suspense): é a hora de o fantasma sair e a tela nova entrar (lib/pageTransition.ts).
@@ -54,6 +59,7 @@ export default function TopBar({ breadcrumb, title, configured, onOpenSettings, 
       </div>
       <div className="topbar-right">
         {NAV.map((n, i) => {
+          if ("adminOnly" in n && n.adminOnly && !isAdmin) return null;
           const on = i === active;
           return (
             <Link
@@ -78,15 +84,17 @@ export default function TopBar({ breadcrumb, title, configured, onOpenSettings, 
             </Link>
           );
         })}
-        <button
-          className="topbar-icon-btn"
-          title={configured ? "Ajustes (conectado)" : "Ajustes (conecte a API)"}
-          aria-label="Ajustes"
-          onClick={onOpenSettings}
-        >
-          <span className={`status-dot ${configured ? "ok" : "bad"}`} style={{ position: "absolute", top: 6, right: 6 }} />
-          <Icon name="settings" />
-        </button>
+        {isAdmin && (
+          <button
+            className="topbar-icon-btn"
+            title={configured ? "Ajustes (conectado)" : "Ajustes (conecte a API)"}
+            aria-label="Ajustes"
+            onClick={onOpenSettings}
+          >
+            <span className={`status-dot ${configured ? "ok" : "bad"}`} style={{ position: "absolute", top: 6, right: 6 }} />
+            <Icon name="settings" />
+          </button>
+        )}
         {onToggleGroupedByDept && (
           <button
             className={`topbar-icon-btn ${groupedByDept ? "on" : ""}`}

@@ -37,3 +37,29 @@ export type SuriAttendantDto = { id: string; name: string; email: string | null 
 
 /** Atendente que aparece nos resultados da busca atual (período + setores filtrados). */
 export type PeriodAttendantDto = { id: string; name: string; departments: string[] };
+
+/** Contato listado na tela temporária /conversas (filas Esperando, Atendimentos e Automático). */
+export type ConversationContactDto = {
+  id: string;
+  name: string;
+  /** agent.status: 0 = Automático (bot), 1 = Esperando, 2 = Atendimentos */
+  status: number;
+  phone: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+  channelType: number;
+  identificationDocument: string | null;
+  note: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  attendantId: string | null;
+  attendantName: string | null;
+  dateRequest: string | null;
+  dateAnswer: string | null;
+  lastMessageAt: string | null;
+  lastActivity: string | null;
+  unreadMessages: number;
+  isTransferred: boolean;
+  dateCreate: string | null;
+  sessionWindowEnd: string | null;
+};

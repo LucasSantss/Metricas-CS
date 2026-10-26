@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings } from "@/lib/db";
 import { fetchAttendants } from "@/lib/suri";
+import { requireAdmin } from "@/lib/admin";
 
 export const runtime = "nodejs";
 
@@ -9,6 +10,8 @@ export const runtime = "nodejs";
 // ?departmentId= é repassado como query param para a API da Suri.
 export async function GET(req: NextRequest) {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
     const settings = await getSettings();
     if (!settings.chatbotUrl || !settings.bearerToken) {
       return NextResponse.json({ error: "Configure a URL do chatbot e o token primeiro." }, { status: 400 });

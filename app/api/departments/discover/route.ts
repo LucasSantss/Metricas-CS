@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, listDepartments } from "@/lib/db";
 import { fetchDepartments } from "@/lib/suri";
+import { requireAdmin } from "@/lib/admin";
 
 export const runtime = "nodejs";
 
@@ -8,6 +9,8 @@ export const runtime = "nodejs";
 // foram adicionados aqui, para o usuário adicionar com um clique.
 export async function POST() {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
     const settings = await getSettings();
     if (!settings.chatbotUrl || !settings.bearerToken) {
       return NextResponse.json({ error: "Configure a URL do chatbot e o token primeiro." }, { status: 400 });

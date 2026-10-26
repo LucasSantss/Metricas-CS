@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listDepartments, upsertDepartment } from "@/lib/db";
+import { requireAdmin } from "@/lib/admin";
 
 export const runtime = "nodejs";
 
@@ -18,6 +19,8 @@ type SuriAdmin = {
  */
 export async function POST(req: NextRequest) {
   try {
+    const denied = await requireAdmin();
+    if (denied) return denied;
     const body = await req.json();
     const admins: SuriAdmin[] = Array.isArray(body?.admins) ? body.admins : [];
     if (admins.length === 0) {
