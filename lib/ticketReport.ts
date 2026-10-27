@@ -399,37 +399,69 @@ const RESPONSE_SCHEMA = {
 
 export const geminiModel = () => process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
 
-export async function callGemini(prompt: string): Promise<unknown> {
+/** Modelo usado quando o principal segue sobrecarregado depois das novas tentativas (opcional). */
+const geminiFallbackModel = () => process.env.GEMINI_FALLBACK_MODEL?.trim() || null;
+
+// Erros passageiros do Google (sobrecarga, limite de taxa): vale esperar e tentar de novo.
+const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRY_WAITS_MS = [5_000, 15_000];
+
+async function requestGemini(model: string, prompt: string, key: string, signal: AbortSignal): Promise<unknown> {
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.3,
+        responseMimeType: "application/json",
+        responseSchema: RESPONSE_SCHEMA,
+        // "Raciocínio" baixo: o texto se apoia em números já calculados, e o raciocínio
+        // longo era o que fazia a resposta passar de 50s.
+        thinkingConfig: { thinkingLevel: "low" },
+      },
+    }),
+    signal,
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw Object.assign(new Error(`Gemini (${model}) respondeu HTTP ${res.status}: ${body?.error?.message ?? "sem detalhe"}`), { status: res.status });
+  const parts: { text?: string; thought?: boolean }[] = body?.candidates?.[0]?.content?.parts ?? [];
+  const text = parts.filter((p) => !p.thought && p.text).map((p) => p.text).join("");
+  if (!text) throw new Error(`Gemini não devolveu texto (motivo: ${body?.candidates?.[0]?.finishReason ?? body?.promptFeedback?.blockReason ?? "desconhecido"}).`);
+  return JSON.parse(text);
+}
+
+/**
+ * Pede o texto ao Gemini. Em erro passageiro (503 "high demand", 429...) espera e tenta de novo;
+ * se o modelo principal continuar fora, tenta GEMINI_FALLBACK_MODEL (se configurado).
+ * Todas as tentativas dividem o mesmo limite de GEMINI_TIMEOUT_MS.
+ */
+export async function callGemini(prompt: string): Promise<{ result: unknown; model: string }> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY não configurada: o relatório saiu só com os números.");
+  const models = [...new Set([geminiModel(), geminiFallbackModel()].filter((m): m is string => !!m))];
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), GEMINI_TIMEOUT_MS);
+  let tries = 0;
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel())}:generateContent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.3,
-          responseMimeType: "application/json",
-          responseSchema: RESPONSE_SCHEMA,
-          // "Raciocínio" baixo: o texto se apoia em números já calculados, e o raciocínio
-          // longo era o que fazia a resposta passar de 50s.
-          thinkingConfig: { thinkingLevel: "low" },
-        },
-      }),
-      signal: ctrl.signal,
-    });
-    const body = await res.json().catch(() => null);
-    if (!res.ok) throw new Error(`Gemini respondeu HTTP ${res.status}: ${body?.error?.message ?? "sem detalhe"}`);
-    const parts: { text?: string; thought?: boolean }[] = body?.candidates?.[0]?.content?.parts ?? [];
-    const text = parts.filter((p) => !p.thought && p.text).map((p) => p.text).join("");
-    if (!text) throw new Error(`Gemini não devolveu texto (motivo: ${body?.candidates?.[0]?.finishReason ?? body?.promptFeedback?.blockReason ?? "desconhecido"}).`);
-    return JSON.parse(text);
+    let lastErr: any;
+    for (const model of models) {
+      for (let attempt = 0; ; attempt++) {
+        tries++;
+        try {
+          return { result: await requestGemini(model, prompt, key, ctrl.signal), model };
+        } catch (e: any) {
+          if (!RETRY_STATUS.has(e.status)) throw e;
+          lastErr = e;
+          if (attempt >= RETRY_WAITS_MS.length) break;
+          await new Promise((r) => setTimeout(r, RETRY_WAITS_MS[attempt]));
+        }
+      }
+    }
+    throw new Error(`${lastErr.message} (${tries} tentativas)`);
   } catch (e: any) {
-    if (e.name === "AbortError") throw new Error(`Gemini demorou mais de ${GEMINI_TIMEOUT_MS / 1000}s para responder.`);
+    if (e.name === "AbortError") throw new Error(`Gemini demorou mais de ${GEMINI_TIMEOUT_MS / 1000}s para responder (${tries} tentativas).`);
     throw e;
   } finally {
     clearTimeout(timer);
@@ -554,8 +586,9 @@ export async function generateTicketReport(weekStart = lastCompleteWeek()): Prom
       model = saved.model;
       aiReused = true;
     } else {
-      ai = parseAi(await callGemini(input.prompt), new Set(input.createdIds), new Set(input.movedIds), input.anon.unalias);
-      model = geminiModel();
+      const res = await callGemini(input.prompt);
+      ai = parseAi(res.result, new Set(input.createdIds), new Set(input.movedIds), input.anon.unalias);
+      model = res.model;
     }
   } catch (e: any) {
     // Não perde um texto já pago: se a IA falhar agora, mantém o da geração anterior, avisando.
