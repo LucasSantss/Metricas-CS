@@ -416,9 +416,9 @@ export default function ConversationsView() {
   const oldestFirst = queue == null ? false : sortOverride[queue] ?? queue === 1;
 
   const visible = useMemo(() => {
-    // Esperando: desde o pedido de atendimento; Atendimentos: última mensagem ou início; Automático: última atividade
+    // Esperando: desde o pedido de atendimento; Atendimentos: início do atendimento (o "há X" laranja); Automático: última atividade
     const ts = (c: ConversationContactDto) =>
-      new Date((queue === 1 ? c.dateRequest : queue === 0 ? c.lastActivity ?? c.lastMessageAt ?? c.dateCreate : c.lastMessageAt ?? c.dateAnswer) ?? 0).getTime();
+      new Date((queue === 1 ? c.dateRequest : queue === 0 ? c.lastActivity ?? c.lastMessageAt ?? c.dateCreate : c.dateAnswer ?? c.lastMessageAt) ?? 0).getTime();
     // Automático com busca: resultado da base inteira, de qualquer fila
     const list = queue === 0 && autoSearch ? autoSearch.contacts : filtered.filter((c) => c.status === queue);
     return [...list].sort((a, b) => (oldestFirst ? ts(a) - ts(b) : ts(b) - ts(a)));
