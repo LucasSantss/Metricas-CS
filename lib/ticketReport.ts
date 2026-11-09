@@ -471,7 +471,9 @@ export const geminiModel = () => process.env.GEMINI_MODEL?.trim() || "gemini-3.6
 
 // Reservas fixos, depois do GEMINI_FALLBACK_MODEL: nomes de modelo saem do ar sem aviso
 // (o gemini-2.5-flash já responde 404) e versões novas às vezes ficam dias sem responder.
-const BUILTIN_FALLBACK_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash"];
+// Os "lite" têm cota diária própria no plano gratuito: 3.6 e 3.5 dividem a mesma, e sem eles
+// o relatório ficava sem texto quando ela acabava.
+const BUILTIN_FALLBACK_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
 
 const geminiModels = () => [...new Set([geminiModel(), process.env.GEMINI_FALLBACK_MODEL?.trim() || "", ...BUILTIN_FALLBACK_MODELS].filter(Boolean))];
 
@@ -514,7 +516,8 @@ async function requestGemini(model: string, prompt: string, system: string, key:
     // Cota diária esgotada: o Google manda voltar em horas, então repetir no mesmo modelo só gasta tempo.
     const retryDelayS = parseFloat(body?.error?.details?.find((d: any) => d.retryDelay)?.retryDelay ?? "0");
     if (res.status === 429 && retryDelayS > 120) throw new GeminiFailure(`cota esgotada, libera em cerca de ${Math.ceil(retryDelayS / 3600)}h`, "next");
-    const action = RETRY_STATUS.has(res.status) ? "retry" : res.status === 404 ? "next" : "stop";
+    // 404 (modelo saiu do ar) e 400 (modelo não aceita a configuração) dependem do modelo; 401/403 é a chave.
+    const action = RETRY_STATUS.has(res.status) ? "retry" : res.status === 401 || res.status === 403 ? "stop" : "next";
     throw new GeminiFailure(`HTTP ${res.status}: ${String(body?.error?.message ?? "sem detalhe").slice(0, 160)}`, action);
   }
   const parts: { text?: string; thought?: boolean }[] = body?.candidates?.[0]?.content?.parts ?? [];

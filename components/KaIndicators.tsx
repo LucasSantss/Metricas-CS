@@ -63,7 +63,7 @@ function Reasons({ d, ai }: { d: ReportData; ai: ReportAi | null | undefined }) 
         </div>
       ) : (
         <div className="tk-body">
-          <span className="hint">{d.cur.created ? "A classificação por motivo depende do texto da IA, que não foi gerado nesta semana." : "Nenhum ticket criado nesta semana."}</span>
+          <span className="hint">{d.cur.created ? "A classificação por motivo depende do texto da IA, que não foi gerado nesta semana. O motivo da falha aparece em \"Resumo da semana\"." : "Nenhum ticket criado nesta semana."}</span>
         </div>
       )}
     </section>

@@ -792,6 +792,7 @@ footer{ margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); 
 .rp-trend-bar.partial{ background: repeating-linear-gradient(135deg, var(--accent) 0 3px, #3A4B5C 3px 6px); }
 .rp-trend-label{ font-family:'IBM Plex Mono', monospace; font-size: 10.5px; color: var(--text-faint); }
 .rp-client-scroll{ max-height: 360px; overflow: auto; scrollbar-color: var(--line) transparent; }
+.rp-client-scroll td:first-child{ white-space: normal; }
 
 /* FUNDO ANIMADO no estilo da logo (components/BrandBackground.tsx) */
 .brand-bg{ position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: #14171d; }
