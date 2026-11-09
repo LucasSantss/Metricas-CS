@@ -4,7 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import TopBar from "./TopBar";
 import SettingsModal from "./SettingsModal";
 import SettingsPanel from "./SettingsPanel";
+import KaIndicators from "./KaIndicators";
 import type { ConfigResponse, DepartmentDto } from "@/lib/types";
+import type { ReportSegment } from "@/lib/db";
 import type { ReportAi, ReportData, ReportTheme, WeekTotals } from "@/lib/ticketReport";
 
 // Mesmo valor de REPORT_VERSION em lib/ticketReport.ts (que não pode ser importado aqui: roda só no servidor).
@@ -91,7 +93,12 @@ function ThemesPanel({ title, sub, themes, data, empty, note }: { title: string;
   );
 }
 
-export default function TicketReportView() {
+export default function TicketReportView({ segment = "all" }: { segment?: ReportSegment }) {
+  const isKa = segment === "ka";
+  const pageTitle = isKa ? "Relatório KA" : "Relatório de tickets";
+  const listUrl = isKa ? "/api/ticket-reports?segment=ka" : "/api/ticket-reports";
+  const weekUrl = useCallback((w: string) => `/api/ticket-reports?${isKa ? "segment=ka&" : ""}week=${w}`, [isKa]);
+
   // Ajustes (mesma engrenagem das outras telas)
   const [config, setConfig] = useState<ConfigResponse | null>(null);
   const [departments, setDepartments] = useState<DepartmentDto[]>([]);
@@ -120,14 +127,14 @@ export default function TicketReportView() {
 
   // lista e relatórios com cache de 5 min (normalmente já pré-carregados — lib/preload.ts)
   const loadList = useCallback(async (force = false) => {
-    const r = await cachedJson("/api/ticket-reports", CACHE_TTL.ticketReports, { force });
+    const r = await cachedJson(listUrl, CACHE_TTL.ticketReports, { force });
     const json = r.data;
     if (!r.ok) throw new Error(json?.error ?? "Falha ao listar relatórios");
     setList(json.reports);
     setLastWeek(json.lastCompleteWeek);
     setCurrentWeek(json.currentWeek);
     return json as { reports: ListItem[]; lastCompleteWeek: string; currentWeek: string };
-  }, []);
+  }, [listUrl]);
 
   const loadReport = useCallback(async (w: string) => {
     setWeek(w);
@@ -135,7 +142,7 @@ export default function TicketReportView() {
     setNotice("");
     setLoading(true);
     try {
-      const r = await cachedJson(`/api/ticket-reports?week=${w}`, CACHE_TTL.ticketReports);
+      const r = await cachedJson(weekUrl(w), CACHE_TTL.ticketReports);
       if (r.status === 404) setReport(null);
       else if (!r.ok) throw new Error(r.data?.error ?? "Falha ao carregar o relatório");
       else setReport(r.data);
@@ -144,7 +151,7 @@ export default function TicketReportView() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [weekUrl]);
 
   useEffect(() => {
     loadList()
@@ -165,7 +172,7 @@ export default function TicketReportView() {
       const res = await fetch("/api/ticket-reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ week: w }),
+        body: JSON.stringify({ week: w, segment }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Falha ao gerar o relatório");
@@ -192,7 +199,7 @@ export default function TicketReportView() {
 
   return (
     <>
-      <TopBar breadcrumb="Relatórios / Suporte" title="Relatório de tickets" configured={configured} onOpenSettings={() => setSettingsOpen(true)} />
+      <TopBar breadcrumb="Relatórios / Suporte" title={pageTitle} configured={configured} onOpenSettings={() => setSettingsOpen(true)} />
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)}>
         <SettingsPanel config={config} departments={departments} onConfigSaved={loadConfig} onDepartmentsChanged={loadDepartments} initialTab="tickets" />
@@ -201,7 +208,7 @@ export default function TicketReportView() {
       <div className="wrap tk">
         <header>
           <div className="page-header-row">
-            <h1>Relatório de tickets</h1>
+            <h1>{pageTitle}</h1>
             <div className="page-header-actions">
               <div className="field">
                 <label>Semana (seg a dom)</label>
@@ -236,6 +243,7 @@ export default function TicketReportView() {
             {report
               ? `Gerado em ${fmtWhen(report.generatedAt)}`
               : "Atualizado automaticamente todo dia às 9h com a semana em andamento"}
+            {isKa && " · só clientes do grupo /ka do SoftCS Bot"}
           </div>
         </header>
 
@@ -329,6 +337,8 @@ export default function TicketReportView() {
                 </div>
               </div>
             </section>
+
+            {isKa && <KaIndicators d={d} ai={ai} />}
 
             {/* TEXTO (IA) */}
             <section className="tk-panel">
@@ -581,6 +591,13 @@ export default function TicketReportView() {
               <b>movimentados</b> = criados antes e com &quot;Atualizado em&quot; na semana, sem contar atualização em lote. Como a SoftCS só informa a
               última atualização, um ticket mexido na semana e de novo depois dela passa a contar na semana da atualização mais recente. Situação
               (resolvido/em aberto) em {fmtWhen(d.snapshotAt ?? d.generatedAt)}. A IA recebe os clientes anonimizados e não recebe nomes de agentes.
+              {isKa && (
+                <>
+                  {" "}
+                  Entram os clientes que estão hoje numa jornada do grupo /ka, inclusive nas semanas anteriores
+                  {d.missingClientJourneys ? `; ${d.missingClientJourneys} cliente(s) da base ainda sem jornada conhecida pelo bot ficaram de fora` : ""}.
+                </>
+              )}
             </div>
           </>
         )}

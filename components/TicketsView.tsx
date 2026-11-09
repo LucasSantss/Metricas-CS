@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TopBar from "./TopBar";
 import Icon from "./Icon";
+import TicketFilterBar from "./TicketFilterBar";
 import { CACHE_TTL, cachedJson, invalidateCached } from "@/lib/clientCache";
 import SettingsModal from "./SettingsModal";
 import SettingsPanel from "./SettingsPanel";
@@ -10,7 +11,6 @@ import type { ConfigResponse, DepartmentDto } from "@/lib/types";
 import {
   BUCKETS,
   KPI_FILTERS,
-  MES_LONGO,
   PAGE_SIZE,
   PRI,
   PRI_KEYS,
@@ -29,7 +29,6 @@ import {
   mean,
   median,
   mlabel,
-  monthWeeks,
   normalizeDates,
   pad,
   AUTO_REFRESH_MS,
@@ -41,19 +40,15 @@ import {
   periodLabel,
   prazo,
   priLabel,
-  metaLabel,
   SEM_NIVEL,
   DEFAULT_META,
   metaOf,
   type SlaMetas,
   sortVal,
-  toLocalInput,
   uniq,
-  weekLabel,
   weekShort,
   type Derived,
   type KpiKey,
-  type Period,
   type Pri,
   type Sort,
   type SortKey,
@@ -410,22 +405,6 @@ export default function TicketsView() {
     else patch({ period: "week", week: key }, true);
   }
 
-  function togglePri(p: Pri) {
-    if (!f) return;
-    const next = new Set(f.pri);
-    if (next.has(p)) next.delete(p);
-    else next.add(p);
-    patch({ pri: next });
-  }
-
-  function toggleNivel(n: string) {
-    if (!f) return;
-    const next = new Set(f.nivel);
-    if (next.has(n)) next.delete(n);
-    else next.add(n);
-    patch({ nivel: next });
-  }
-
   function clearFilters() {
     if (!f) return;
     setF(defaultFilters(tickets, f.base, f.bulk));
@@ -533,198 +512,21 @@ export default function TicketsView() {
         ) : (
           <>
             {/* FILTROS */}
-            <div className="filter-bar">
-              <div className="filter-bar-row">
-                <div className="field">
-                  <label>Filtrar datas por</label>
-                  <div className="view-mode-toggle">
-                    {(
-                      [
-                        ["c", "Criado em"],
-                        ["u", "Atualizado em"],
-                      ] as const
-                    ).map(([v, l]) => (
-                      <button key={v} type="button" className={f.base === v ? "on" : ""} onClick={() => patch({ base: v }, true)}>
-                        {l}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="field">
-                  <label>Ano</label>
-                  <input
-                    type="number"
-                    className="field-year"
-                    value={f.year}
-                    min={Math.min(...options.years)}
-                    max={Math.max(...options.years)}
-                    onChange={(e) => {
-                      const y = Number(e.target.value);
-                      if (y) patch({ year: y }, true);
-                    }}
-                  />
-                </div>
-                <div className="field">
-                  <label>Mês</label>
-                  <select value={f.month} onChange={(e) => patch({ month: Number(e.target.value) }, true)}>
-                    {MES_LONGO.map((m, i) => (
-                      <option key={m} value={i + 1}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Período</label>
-                  <div className="view-mode-toggle">
-                    {(
-                      [
-                        ["day", "Dia"],
-                        ["week", "Semana"],
-                        ["month", "Mês inteiro"],
-                      ] as [Period, string][]
-                    ).map(([v, l]) => (
-                      <button key={v} type="button" className={f.period === v ? "on" : ""} onClick={() => patch({ period: v }, true)}>
-                        {l}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                {f.period === "week" && (
-                  <div className="field grow">
-                    <label>Semana (seg–sáb)</label>
-                    <select value={f.week} onChange={(e) => patch({ week: e.target.value })}>
-                      {monthWeeks(f.year, f.month).map((w) => (
-                        <option key={w.key} value={w.key}>
-                          {weekLabel(w)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-                {f.period === "day" && (
-                  <div className="field">
-                    <label>Dia</label>
-                    <input
-                      type="date"
-                      value={f.day}
-                      min={`${f.year}-${pad(f.month)}-01`}
-                      max={`${f.year}-${pad(f.month)}-${pad(new Date(f.year, f.month, 0).getDate())}`}
-                      onChange={(e) => e.target.value && patch({ day: e.target.value })}
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="filter-bar-row">
-                <div className="field">
-                  <label>Prioridade (define a meta de SLA)</label>
-                  <div className="dept-toggle-list">
-                    {PRI_KEYS.filter((k) => k !== "—" || options.hasNoPri).map((k) => {
-                      const on = f.pri.has(k);
-                      return (
-                        <button key={k} type="button" className={`dept-toggle tk-pri-toggle ${on ? "on" : ""}`} aria-pressed={on} onClick={() => togglePri(k)}>
-                          <i className="tk-dot" style={{ background: PRI[k].c }} />
-                          {priLabel(k)}
-                          <span className="tk-meta">{metaLabel(k, metas)}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="field">
-                  <label>Nível de atendimento</label>
-                  <div className="dept-toggle-list">
-                    {options.nivel.map((n) => {
-                      const on = f.nivel.has(n);
-                      return (
-                        <button key={n} type="button" className={`dept-toggle ${on ? "on" : ""}`} aria-pressed={on} onClick={() => toggleNivel(n)}>
-                          {n}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <div className="filter-bar-row">
-                <div className="field">
-                  <label>Situação</label>
-                  <select value={f.status} onChange={(e) => patch({ status: e.target.value as TicketFilters["status"] })}>
-                    <option value="">Todas</option>
-                    <option value="res">Resolvidos</option>
-                    <option value="open">Em aberto</option>
-                  </select>
-                </div>
-                {(
-                  [
-                    ["etapa", "Etapa", "Todas"],
-                    ["agente", "Agente responsável", "Todos"],
-                  ] as const
-                ).map(([k, l, all]) => (
-                  <div className="field" key={k}>
-                    <label>{l}</label>
-                    <select value={f[k]} onChange={(e) => patch({ [k]: e.target.value })}>
-                      <option value="">{all}</option>
-                      {options[k].map((v) => (
-                        <option key={v} value={v}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                ))}
-                <div className="field">
-                  <label>Cliente</label>
-                  <input type="text" list="tk-clientes" placeholder="Nome do cliente" value={f.cliente} onChange={(e) => patch({ cliente: e.target.value })} />
-                  <datalist id="tk-clientes">
-                    {options.cliente.map((v) => (
-                      <option key={v} value={v} />
-                    ))}
-                  </datalist>
-                </div>
-                <div className="field grow">
-                  <label>Buscar</label>
-                  <input type="text" placeholder="ID, título ou descrição" value={f.q} onChange={(e) => patch({ q: e.target.value })} />
-                </div>
-              </div>
-
-              <div className="filter-bar-row">
-                <div className="field">
-                  <label>Referência de tempo (agora)</label>
-                  <div className="tk-ref">
-                    <input
-                      type="datetime-local"
-                      value={toLocalInput(ref)}
-                      onChange={(e) => {
-                        const d = new Date(e.target.value);
-                        if (!isNaN(+d)) setRefManual(d);
-                      }}
-                    />
-                    <button className="btn" onClick={() => setRefManual(new Date(), true)}>
-                      Agora
-                    </button>
-                    {file.exportDate && (
-                      <button className="btn" onClick={() => setRefManual(file.exportDate!)}>
-                        {file.name === SOFTCS_NAME ? "Horário dos dados" : "Horário da exportação"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <label className="checkbox-field tk-bulk">
-                  <input type="checkbox" checked={f.bulk} onChange={(e) => setF({ ...f, bulk: e.target.checked })} />
-                  <span>
-                    Ignorar atualizações em massa no SLA
-                    <span className="hint">{file.bulkNote}</span>
-                  </span>
-                </label>
-                <div className="tk-push">
-                  <button className="btn" onClick={clearFilters}>
-                    Limpar filtros
-                  </button>
-                </div>
-              </div>
-            </div>
+            <TicketFilterBar
+              f={f}
+              tickets={tickets}
+              options={options}
+              metas={metas}
+              patch={patch}
+              onBulkChange={(bulk) => setF({ ...f, bulk })}
+              onClear={clearFilters}
+              refDate={ref}
+              refIsNow={refFollowsNow.current}
+              onRefChange={setRefManual}
+              dataDate={file.exportDate}
+              dataDateLabel={file.name === SOFTCS_NAME ? "Horário dos dados" : "Horário da exportação"}
+              bulkNote={file.bulkNote}
+            />
 
             {/* KPIs */}
             <Kpis list={list} f={f} kf={kf} onPick={pickKpi} />

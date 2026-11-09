@@ -134,6 +134,9 @@ export async function ensureSchema() {
     ALTER TABLE ticket_reports ADD COLUMN IF NOT EXISTS ai_input_hash TEXT
   `;
   await sql`
+    CREATE TABLE IF NOT EXISTS ticket_reports_ka (LIKE ticket_reports INCLUDING ALL)
+  `;
+  await sql`
     CREATE TABLE IF NOT EXISTS admins (
       email TEXT PRIMARY KEY,
       added_by TEXT,
@@ -319,7 +322,13 @@ export async function deleteDepartment(id: number) {
   await sql`DELETE FROM departments WHERE id = ${id}`;
 }
 
-/* ---------- Relatório de tickets (um por semana) ---------- */
+/* ---------- Relatório de tickets (um por semana e por recorte) ---------- */
+
+/** "all" = base inteira; "ka" = só clientes do grupo /ka do SoftCS Bot. */
+export type ReportSegment = "all" | "ka";
+
+// Nome de tabela não pode ir como parâmetro; só estes dois valores fixos chegam nas consultas.
+const reportTable = (segment: ReportSegment) => (segment === "ka" ? "ticket_reports_ka" : "ticket_reports");
 
 export type TicketReportRow = {
   weekStart: string; // "YYYY-MM-DD", segunda-feira
@@ -332,32 +341,37 @@ export type TicketReportRow = {
   aiInputHash: string | null;
 };
 
-export async function saveTicketReport(r: {
-  weekStart: string;
-  data: unknown;
-  ai: unknown | null;
-  aiError: string | null;
-  model: string | null;
-  aiInputHash: string | null;
-}) {
+export async function saveTicketReport(
+  r: {
+    weekStart: string;
+    data: unknown;
+    ai: unknown | null;
+    aiError: string | null;
+    model: string | null;
+    aiInputHash: string | null;
+  },
+  segment: ReportSegment = "all"
+) {
   const sql = getSql();
   await ensureSchema();
-  await sql`
-    INSERT INTO ticket_reports (week_start, generated_at, data, ai, ai_error, model, ai_input_hash)
-    VALUES (${r.weekStart}, now(), ${JSON.stringify(r.data)}::jsonb, ${r.ai == null ? null : JSON.stringify(r.ai)}::jsonb, ${r.aiError}, ${r.model}, ${r.aiInputHash})
-    ON CONFLICT (week_start) DO UPDATE SET
-      generated_at = now(), data = EXCLUDED.data, ai = EXCLUDED.ai, ai_error = EXCLUDED.ai_error,
-      model = EXCLUDED.model, ai_input_hash = EXCLUDED.ai_input_hash
-  `;
+  await sql(
+    `INSERT INTO ${reportTable(segment)} (week_start, generated_at, data, ai, ai_error, model, ai_input_hash)
+     VALUES ($1, now(), $2::jsonb, $3::jsonb, $4, $5, $6)
+     ON CONFLICT (week_start) DO UPDATE SET
+       generated_at = now(), data = EXCLUDED.data, ai = EXCLUDED.ai, ai_error = EXCLUDED.ai_error,
+       model = EXCLUDED.model, ai_input_hash = EXCLUDED.ai_input_hash`,
+    [r.weekStart, JSON.stringify(r.data), r.ai == null ? null : JSON.stringify(r.ai), r.aiError, r.model, r.aiInputHash]
+  );
 }
 
-export async function getTicketReport(weekStart: string): Promise<TicketReportRow | null> {
+export async function getTicketReport(weekStart: string, segment: ReportSegment = "all"): Promise<TicketReportRow | null> {
   const sql = getSql();
   await ensureSchema();
-  const rows = await sql`
-    SELECT week_start::text AS week_start, generated_at, data, ai, ai_error, model, ai_input_hash
-    FROM ticket_reports WHERE week_start = ${weekStart}
-  `;
+  const rows = await sql(
+    `SELECT week_start::text AS week_start, generated_at, data, ai, ai_error, model, ai_input_hash
+     FROM ${reportTable(segment)} WHERE week_start = $1`,
+    [weekStart]
+  );
   const row = rows[0] as any;
   if (!row) return null;
   return {
@@ -372,14 +386,14 @@ export async function getTicketReport(weekStart: string): Promise<TicketReportRo
 }
 
 /** Semanas com relatório gerado, da mais recente pra mais antiga (sem o conteúdo). */
-export async function listTicketReports(): Promise<{ weekStart: string; generatedAt: string; hasAi: boolean }[]> {
+export async function listTicketReports(segment: ReportSegment = "all"): Promise<{ weekStart: string; generatedAt: string; hasAi: boolean }[]> {
   const sql = getSql();
   await ensureSchema();
-  const rows = await sql`
-    SELECT week_start::text AS week_start, generated_at, ai IS NOT NULL AS has_ai
-    FROM ticket_reports ORDER BY week_start DESC LIMIT 104
-  `;
-  return rows.map((r: any) => ({ weekStart: r.week_start, generatedAt: new Date(r.generated_at).toISOString(), hasAi: r.has_ai }));
+  const rows = await sql(
+    `SELECT week_start::text AS week_start, generated_at, ai IS NOT NULL AS has_ai
+     FROM ${reportTable(segment)} ORDER BY week_start DESC LIMIT 104`
+  );
+  return (rows as any[]).map((r: any) => ({ weekStart: r.week_start, generatedAt: new Date(r.generated_at).toISOString(), hasAi: r.has_ai }));
 }
 
 // Administradores (lib/admin.ts): além do administrador fixo, os e-mails adicionados pela tela de Ajustes

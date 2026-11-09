@@ -34,6 +34,10 @@ export type Ticket = {
   search: string;
   /** "Atualizado em" no mesmo minuto que BULK_MIN+ tickets: atualização em lote. */
   bulk: boolean;
+  /** Grupos de jornada do cliente no SoftCS Bot (ex.: "ka"). Só a leitura ao vivo traz. */
+  groups: string[];
+  /** Jornadas ativas do cliente na SoftCS. Só a leitura ao vivo traz. */
+  journeys: string[];
 };
 
 export type Derived = {
@@ -68,6 +72,8 @@ export type TicketFilters = {
   etapa: string;
   nivel: Set<string>;
   agente: string;
+  grupo: string;
+  jornada: string;
   cliente: string;
   q: string;
   bulk: boolean;
@@ -86,6 +92,8 @@ export const PRI: Record<Pri, { l: string; c: string }> = {
 export const PRI_KEYS: Pri[] = ["P0", "P1", "P2", "P3", "—"];
 export const priLabel = (p: Pri) => (p === "—" ? "Sem prioridade" : `${p} - ${PRI[p].l}`);
 export const SEM_NIVEL = "Sem nível";
+export const SEM_JORNADA = "Sem jornada";
+export const SEM_GRUPO = "Sem grupo";
 
 export const BUCKETS: [number, string][] = [
   [24, "até 1 dia"],
@@ -319,6 +327,8 @@ type TicketFields = {
   cp: string;
   c: Date;
   u: Date;
+  groups?: string[];
+  journeys?: string[];
 };
 
 /** Monta um Ticket (com as chaves de mês/semana/dia já calculadas) a partir dos campos crus — compartilhado pelo .xlsx e pela API. */
@@ -346,6 +356,8 @@ function makeTicket(x: TicketFields): Ticket {
     wu: isoWeek(x.u),
     search: "",
     bulk: false,
+    groups: x.groups ?? [],
+    journeys: (x.journeys ?? []).map((j) => j.trim()),
   };
 }
 
@@ -384,7 +396,8 @@ export type ApiTicket = {
   slaHours: number | null;
   agent: { id: string; name: string | null } | null;
   createdBy: { id: string; name: string | null } | null;
-  client: { id: string; name: string | null } | null;
+  /** groups: comandos dos grupos de jornada do cliente (ex.: "ka"); ausente em versões antigas do bot */
+  client: { id: string; name: string | null; journeyNames?: string[]; groups?: string[] } | null;
   createdAt: string | null;
   updatedAt: string | null;
   closedAt: string | null;
@@ -395,6 +408,8 @@ export type ApiExport = {
   snapshotAt?: string | null;
   count: number;
   missingClientNames: number;
+  /** clientes cuja jornada o bot ainda não buscou na SoftCS */
+  missingClientJourneys?: number;
   tickets: ApiTicket[];
 };
 
@@ -446,6 +461,8 @@ export function parseTicketsApi(data: ApiExport): ParsedFile {
         cp: t.createdBy?.name ?? "",
         c,
         u: isNaN(+u) ? c : u,
+        groups: t.client?.groups,
+        journeys: t.client?.journeyNames,
       })
     );
   }
@@ -457,6 +474,21 @@ export function parseTicketsApi(data: ApiExport): ParsedFile {
 export const isInat = (t: Ticket) => norm(t.etapa).includes("inatividade");
 // "cancelado" só vem da leitura ao vivo (parseTicketsApi): encerrado na SoftCS, então não conta como em aberto
 export const isRes = (t: Ticket) => ["resolvido", "cancelado"].includes(norm(t.status)) || isInat(t);
+
+/** Valores existentes, com a opção "sem" no fim. Vazio quando os tickets não trazem o dado (.xlsx). */
+function tagOptions(lists: string[][], none: string) {
+  const names = [...new Set(lists.flat())].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  return names.length && lists.some((l) => !l.length) ? [...names, none] : names;
+}
+const hasTag = (tags: string[], wanted: string, none: string) => (wanted === none ? !tags.length : tags.includes(wanted));
+
+export const journeyOptions = (tickets: Ticket[]) => tagOptions(tickets.map((t) => t.journeys), SEM_JORNADA);
+export const groupOptions = (tickets: Ticket[]) => tagOptions(tickets.map((t) => t.groups), SEM_GRUPO);
+export const inGroup = (t: Ticket, group: string) => hasTag(t.groups, group, SEM_GRUPO);
+
+// O bot só envia o comando do grupo; comando sem nome aqui aparece como no Telegram (/comando).
+const GROUP_NAMES: Record<string, string> = { ka: "KA", adocao: "Adoção", [SEM_GRUPO]: SEM_GRUPO };
+export const groupLabel = (group: string) => GROUP_NAMES[group] ?? `/${group}`;
 
 export const baseDate = (t: Ticket, f: TicketFilters) => (f.base === "u" ? t.u : t.c);
 export const baseMonth = (t: Ticket, f: TicketFilters) => (f.base === "u" ? t.mu : t.mc);
@@ -509,6 +541,8 @@ export function defaultFilters(tickets: Ticket[], base: "c" | "u" = "c", bulk = 
     etapa: "",
     nivel: new Set(),
     agente: "",
+    grupo: "",
+    jornada: "",
     cliente: "",
     q: "",
     bulk,
@@ -547,6 +581,9 @@ export function passes(t: Ticket, f: TicketFilters, skipDate = false) {
   if (f.etapa && t.etapa !== f.etapa) return false;
   if (f.nivel.size && !f.nivel.has(t.nivel)) return false;
   if (f.agente && t.agente !== f.agente) return false;
+  // cliente em mais de um grupo ou jornada aparece no filtro de cada um
+  if (f.grupo && !inGroup(t, f.grupo)) return false;
+  if (f.jornada && !hasTag(t.journeys, f.jornada, SEM_JORNADA)) return false;
   if (f.cliente && !norm(t.cliente).includes(norm(f.cliente))) return false;
   if (f.q && !t.search.includes(norm(f.q))) return false;
   return true;

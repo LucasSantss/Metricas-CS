@@ -14,6 +14,7 @@ const NAV = [
   { href: "/percentis", icon: "chart-histogram", title: "Percentis (P50/P75/P90)" },
   { href: "/tickets", icon: "ticket", title: "Painel de tickets" },
   { href: "/relatorio-tickets", icon: "file-chart-line", title: "Relatório semanal de tickets" },
+  { href: "/relatorio-ka", icon: "crown", title: "Relatório semanal de tickets KA" },
   // aba temporária, só de administradores (components/ConversationsView.tsx, lib/admin.ts)
   { href: "/conversas", icon: "comments", title: "Conversas — Esperando, Atendimentos e Automático (temporária)", adminOnly: true },
 ];

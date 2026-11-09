@@ -12,7 +12,7 @@ import { readAttendantFilter } from "./attendantFilter";
 import { isFresh, readReportCache, writeReportCache } from "./reportCache";
 import { CACHE_TTL, cachedJson } from "./clientCache";
 
-const ROUTES = ["/", "/percentis", "/tickets", "/relatorio-tickets"] as const;
+const ROUTES = ["/", "/percentis", "/tickets", "/relatorio-tickets", "/relatorio-ka"] as const;
 type Router = { prefetch: (href: string) => void };
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -59,11 +59,15 @@ export async function preloadAll(router: Router, currentPath: string) {
 
   // Painel e Relatório de tickets não dependem da conexão com a Suri
   if (!skip("/tickets")) tasks.push(cachedJson("/api/tickets/softcs", CACHE_TTL.tickets));
-  if (!skip("/relatorio-tickets")) {
+  for (const [route, listUrl, weekUrl] of [
+    ["/relatorio-tickets", "/api/ticket-reports", "/api/ticket-reports?week="],
+    ["/relatorio-ka", "/api/ticket-reports?segment=ka", "/api/ticket-reports?segment=ka&week="],
+  ] as const) {
+    if (skip(route)) continue;
     tasks.push(
-      cachedJson<{ reports?: { weekStart: string }[]; lastCompleteWeek?: string }>("/api/ticket-reports", CACHE_TTL.ticketReports).then((r) => {
+      cachedJson<{ reports?: { weekStart: string }[]; lastCompleteWeek?: string }>(listUrl, CACHE_TTL.ticketReports).then((r) => {
         const week = r.data?.reports?.[0]?.weekStart ?? r.data?.lastCompleteWeek;
-        return week ? cachedJson(`/api/ticket-reports?week=${week}`, CACHE_TTL.ticketReports) : undefined;
+        return week ? cachedJson(`${weekUrl}${week}`, CACHE_TTL.ticketReports) : undefined;
       })
     );
   }

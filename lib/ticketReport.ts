@@ -13,8 +13,8 @@
  * Tickets antigos que não mexeram na semana ficam de fora.
  */
 import { createHash } from "node:crypto";
-import { fetchBotExport } from "./softcsBot";
-import { getSettings, getTicketReport, saveTicketReport, type TicketReportRow } from "./db";
+import { BotError, fetchBotExport } from "./softcsBot";
+import { getSettings, getTicketReport, saveTicketReport, type ReportSegment, type TicketReportRow } from "./db";
 import {
   DEFAULT_META,
   PRI_KEYS,
@@ -27,6 +27,7 @@ import {
   parseTicketsApi,
   prazo,
   priLabel,
+  type ApiExport,
   type Derived,
   type Pri,
   type SlaMetas,
@@ -95,6 +96,8 @@ export type WeekTotals = {
   bulkExcluded: number;
 };
 
+export type BreakdownRow = { name: string; created: number; moved: number; open: number; late: number };
+
 export type TicketRef = { titulo: string; cliente: string; pri: Pri; etapa: string; situacao: string; origem: "criado" | "movimentado" };
 
 export type ReportData = {
@@ -128,6 +131,14 @@ export type ReportData = {
   repeatedTitles: { titulo: string; n: number; ids: string[] }[];
   highlights: { tipo: "volume" | "atraso" | "cliente" | "lote" | "antigos"; texto: string; ids: string[] }[];
   tickets: Record<string, TicketRef>;
+  /** só no recorte KA: todos os clientes com ticket criado ou movimentado na semana */
+  byClient?: BreakdownRow[];
+  /** só no recorte KA: mesma abertura por jornada; cliente em mais de uma jornada conta em cada */
+  byJourney?: BreakdownRow[];
+  /** só no recorte KA: tickets criados nas últimas 8 semanas, da mais antiga até esta */
+  weekly?: { weekStart: string; created: number }[];
+  /** só no recorte KA: clientes cuja jornada o bot ainda não conhece (ficam fora do recorte) */
+  missingClientJourneys?: number;
 };
 
 export type ReportTheme = { titulo: string; descricao: string; impacto: "alto" | "medio" | "baixo"; ticketIds: string[] };
@@ -201,7 +212,41 @@ function groupBy<T>(items: T[], key: (x: T) => string) {
   return m;
 }
 
-export function computeReportData(tickets: Ticket[], metas: SlaMetas, weekStart: string, now: Date, snapshotAt: string | null): ReportData {
+/** Criados, movimentados, abertos e atrasados por chave; um ticket com várias chaves conta em cada uma. */
+function breakdown(scope: Derived[], createdIds: Set<string>, keysOf: (x: Derived) => string[]): BreakdownRow[] {
+  const byKey = new Map<string, Derived[]>();
+  for (const x of scope) for (const k of keysOf(x)) byKey.set(k, [...(byKey.get(k) ?? []), x]);
+  return [...byKey]
+    .map(([name, xs]) => ({
+      name,
+      created: xs.filter((x) => createdIds.has(x.t.id)).length,
+      moved: xs.filter((x) => !createdIds.has(x.t.id)).length,
+      open: xs.filter((x) => !x.res).length,
+      late: xs.filter((x) => !x.res && x.late).length,
+    }))
+    .sort((a, b) => b.created - a.created || b.moved - a.moved || a.name.localeCompare(b.name, "pt-BR"));
+}
+
+/** Comando do grupo de jornada do bot que define quem é cliente KA. */
+const KA_GROUP = "ka";
+
+/** Tickets dos clientes do grupo /ka, com erro claro se o bot publicado ainda não informa os grupos. */
+function kaTickets(exp: ApiExport, tickets: Ticket[]) {
+  if (!exp.tickets.some((t) => Array.isArray(t.client?.groups)))
+    throw new BotError("O SoftCS Bot publicado ainda não informa os grupos de jornada: publique a versão que envia client.groups na exportação.", 502);
+  const ka = tickets.filter((t) => t.groups.includes(KA_GROUP));
+  if (!ka.length) throw new BotError(`Nenhum ticket de cliente do grupo /${KA_GROUP}: confira as jornadas do grupo na aba Jornadas do SoftCS Bot.`, 502);
+  return ka;
+}
+
+export function computeReportData(
+  tickets: Ticket[],
+  metas: SlaMetas,
+  weekStart: string,
+  now: Date,
+  snapshotAt: string | null,
+  opts: { segment?: ReportSegment; missingClientJourneys?: number } = {}
+): ReportData {
   const all = tickets.map((t) => derive(t, now, true, metas));
   const r = rangeOf(weekStart);
   const partial = +now < r.end;
@@ -273,7 +318,7 @@ export function computeReportData(tickets: Ticket[], metas: SlaMetas, weekStart:
   if (lateHigh.length)
     highlights.push({
       tipo: "atraso",
-      texto: `${lateHigh.length} ticket(s) P0/P1 da semana seguem em aberto com SLA estourado.`,
+      texto: `${lateHigh.length} ticket(s) P0/P1 da semana (${lateHigh.filter((x) => createdIds.has(x.t.id)).length} criado(s), ${lateHigh.filter((x) => !createdIds.has(x.t.id)).length} movimentado(s)) seguem em aberto com SLA estourado.`,
       ids: lateHigh.slice(0, 10).map((x) => x.t.id),
     });
   topClients
@@ -324,6 +369,16 @@ export function computeReportData(tickets: Ticket[], metas: SlaMetas, weekStart:
     repeatedTitles,
     highlights,
     tickets: tickets_,
+    ...(opts.segment === "ka" && {
+      byClient: breakdown(scope, createdIds, (x) => [x.t.cliente]),
+      byJourney: breakdown(scope, createdIds, (x) => x.t.journeys),
+      weekly: Array.from({ length: 8 }, (_, i) => {
+        const start = addDays(weekStart, (i - 7) * 7);
+        const range = rangeOf(start);
+        return { weekStart: start, created: all.filter((x) => within(x.t.c, range)).length };
+      }),
+      missingClientJourneys: opts.missingClientJourneys ?? 0,
+    }),
   };
 }
 
@@ -333,6 +388,10 @@ const MAX_TICKETS_AI = 250;
 const DESC_MAX_AI = 500;
 // A função tem até 300s na Vercel (Hobby com Fluid compute); sobra folga pra busca no bot e gravação.
 const GEMINI_TIMEOUT_MS = 240_000;
+// Limite de cada tentativa: um modelo travado não pode gastar o tempo dos reservas.
+// O relatório normal leva ~20s nos modelos que estão respondendo.
+const GEMINI_ATTEMPT_TIMEOUT_MS = 90_000;
+const GEMINI_MIN_ATTEMPT_MS = 15_000;
 
 /** Troca nomes de cliente por CLIENTE_N e tira e-mails/telefones antes de mandar pro Gemini. */
 function makeAnonymizer(clientNames: string[]) {
@@ -361,6 +420,8 @@ O relatório cobre só o que aconteceu dentro da semana:
 
 Regras:
 - Use SOMENTE os números que aparecem em METRICAS. Não calcule, estime nem invente números novos.
+- Em METRICAS, "tickets_da_semana_em_aberto", "tickets_da_semana_com_sla_estourado" e, em "por_prioridade", os campos terminados em "_criados_mais_movimentados" somam tickets criados E movimentados. Nunca os apresente como se fossem só dos criados: para falar dos criados use "semana_atual.createdOpen" e "criados_com_sla_estourado"; para os movimentados, "semana_atual.movedOpen" e "movimentados_com_sla_estourado".
+- Escreva para pessoas: nunca coloque no texto nomes de campos de METRICAS, como os citados acima.
 - Ao citar tickets, use apenas os ids da lista TICKETS. Cada ticket tem o campo "origem" ("criado na semana" ou "movimentado na semana").
 - Os clientes estão anonimizados como CLIENTE_N: mantenha esses códigos exatamente como estão.
 - "resumo": 2 a 4 parágrafos curtos sobre o que aconteceu na semana, comparando com a semana anterior quando fizer sentido.
@@ -370,6 +431,15 @@ Regras:
 - "recomendacoes": ações práticas e específicas para a próxima semana (máximo 5).
 - Se METRICAS.semana_em_andamento for true, a semana ainda não terminou: deixe claro que os números são parciais (até METRICAS.dados_ate) e cuidado ao comparar com a semana anterior, que está completa.
 - Seja direto e objetivo. Não repita a lista de números; interprete-os.`;
+
+const KA_PROMPT = `
+
+Este relatório cobre SOMENTE os clientes do grupo KA (contas-chave), e o objetivo é entender a demanda de suporte gerada por eles. Regras adicionais:
+- "resumo": diga quais clientes concentram a demanda (METRICAS.por_cliente), quais jornadas concentram a demanda (METRICAS.por_jornada) e como o volume evoluiu (METRICAS.evolucao_semanal). Um cliente em mais de uma jornada conta em cada uma: não some as jornadas.
+- "temasCriados": funciona como a classificação por motivo. Coloque cada ticket criado na semana em exatamente um tema, sem repetir ids entre temas e sem deixar ticket de fora. Se houver poucos tickets, use menos temas.
+- "riscos" e "recomendacoes": escreva para o time de CS que cuida dessas contas, citando o cliente quando o ponto for específico de um deles.`;
+
+const systemPromptFor = (segment: ReportSegment) => (segment === "ka" ? SYSTEM_PROMPT + KA_PROMPT : SYSTEM_PROMPT);
 
 const THEME_LIST_SCHEMA = {
   type: "ARRAY",
@@ -397,81 +467,107 @@ const RESPONSE_SCHEMA = {
   required: ["resumo", "temasCriados", "temasMovimentados", "riscos", "recomendacoes"],
 };
 
-export const geminiModel = () => process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+export const geminiModel = () => process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
 
-/** Modelo usado quando o principal segue sobrecarregado depois das novas tentativas (opcional). */
-const geminiFallbackModel = () => process.env.GEMINI_FALLBACK_MODEL?.trim() || null;
+// Reservas fixos, depois do GEMINI_FALLBACK_MODEL: nomes de modelo saem do ar sem aviso
+// (o gemini-2.5-flash já responde 404) e versões novas às vezes ficam dias sem responder.
+const BUILTIN_FALLBACK_MODELS = ["gemini-3.6-flash", "gemini-3.5-flash"];
+
+const geminiModels = () => [...new Set([geminiModel(), process.env.GEMINI_FALLBACK_MODEL?.trim() || "", ...BUILTIN_FALLBACK_MODELS].filter(Boolean))];
 
 // Erros passageiros do Google (sobrecarga, limite de taxa): vale esperar e tentar de novo.
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
 const RETRY_WAITS_MS = [5_000, 15_000];
 
-async function requestGemini(model: string, prompt: string, key: string, signal: AbortSignal): Promise<unknown> {
+/** retry = tenta de novo no mesmo modelo; next = pula pro próximo modelo; stop = nenhum modelo vai resolver (ex.: chave inválida). */
+class GeminiFailure extends Error {
+  constructor(message: string, public action: "retry" | "next" | "stop") {
+    super(message);
+  }
+}
+
+async function requestGemini(model: string, prompt: string, system: string, key: string, signal: AbortSignal): Promise<unknown> {
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      systemInstruction: { parts: [{ text: system }] },
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.3,
         responseMimeType: "application/json",
         responseSchema: RESPONSE_SCHEMA,
         // "Raciocínio" baixo: o texto se apoia em números já calculados, e o raciocínio
-        // longo era o que fazia a resposta passar de 50s.
-        thinkingConfig: { thinkingLevel: "low" },
+        // longo era o que fazia a resposta passar de 50s. A família 2.x não aceita esse campo.
+        ...(/^gemini-2/.test(model) ? {} : { thinkingConfig: { thinkingLevel: "low" } }),
       },
     }),
     signal,
   });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw Object.assign(new Error(`Gemini (${model}) respondeu HTTP ${res.status}: ${body?.error?.message ?? "sem detalhe"}`), { status: res.status });
+  // text() fora de try: se o limite estourar no meio da leitura, o erro de tempo precisa subir.
+  const raw = await res.text();
+  let body: any = null;
+  try {
+    body = JSON.parse(raw);
+  } catch {}
+  if (!res.ok) {
+    // Cota diária esgotada: o Google manda voltar em horas, então repetir no mesmo modelo só gasta tempo.
+    const retryDelayS = parseFloat(body?.error?.details?.find((d: any) => d.retryDelay)?.retryDelay ?? "0");
+    if (res.status === 429 && retryDelayS > 120) throw new GeminiFailure(`cota esgotada, libera em cerca de ${Math.ceil(retryDelayS / 3600)}h`, "next");
+    const action = RETRY_STATUS.has(res.status) ? "retry" : res.status === 404 ? "next" : "stop";
+    throw new GeminiFailure(`HTTP ${res.status}: ${String(body?.error?.message ?? "sem detalhe").slice(0, 160)}`, action);
+  }
   const parts: { text?: string; thought?: boolean }[] = body?.candidates?.[0]?.content?.parts ?? [];
   const text = parts.filter((p) => !p.thought && p.text).map((p) => p.text).join("");
-  if (!text) throw new Error(`Gemini não devolveu texto (motivo: ${body?.candidates?.[0]?.finishReason ?? body?.promptFeedback?.blockReason ?? "desconhecido"}).`);
-  return JSON.parse(text);
+  const finish = body?.candidates?.[0]?.finishReason ?? body?.promptFeedback?.blockReason ?? "desconhecido";
+  if (!text) throw new GeminiFailure(`não devolveu texto (motivo: ${finish})`, "retry");
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new GeminiFailure(`devolveu JSON inválido (motivo: ${finish})`, "retry");
+  }
 }
 
 /**
- * Pede o texto ao Gemini. Em erro passageiro (503 "high demand", 429...) espera e tenta de novo;
- * se o modelo principal continuar fora, tenta GEMINI_FALLBACK_MODEL (se configurado).
- * Todas as tentativas dividem o mesmo limite de GEMINI_TIMEOUT_MS.
+ * Pede o texto ao Gemini, percorrendo os modelos de geminiModels() em ordem. Cada tentativa tem
+ * limite próprio: modelo que não responde perde a vez na hora; erro passageiro (503, 429, resposta
+ * cortada) espera e tenta de novo no mesmo modelo; modelo inexistente (404) é pulado.
+ * Tudo cabe em GEMINI_TIMEOUT_MS ou em `deadline` (epoch ms), o que vier antes.
  */
-export async function callGemini(prompt: string): Promise<{ result: unknown; model: string }> {
+export async function callGemini(prompt: string, opts: { system?: string; deadline?: number } = {}): Promise<{ result: unknown; model: string }> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY não configurada: o relatório saiu só com os números.");
-  const models = [...new Set([geminiModel(), geminiFallbackModel()].filter((m): m is string => !!m))];
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), GEMINI_TIMEOUT_MS);
-  let tries = 0;
-  try {
-    let lastErr: any;
-    for (const model of models) {
-      for (let attempt = 0; ; attempt++) {
-        tries++;
-        try {
-          return { result: await requestGemini(model, prompt, key, ctrl.signal), model };
-        } catch (e: any) {
-          if (!RETRY_STATUS.has(e.status)) throw e;
-          lastErr = e;
-          if (attempt >= RETRY_WAITS_MS.length) break;
-          await new Promise((r) => setTimeout(r, RETRY_WAITS_MS[attempt]));
-        }
+  const deadline = Math.min(Date.now() + GEMINI_TIMEOUT_MS, opts.deadline ?? Infinity);
+  const left = () => deadline - Date.now();
+  const failures: string[] = [];
+  const failed = () => new Error(`O Gemini não respondeu (${[...new Set(failures)].join("; ") || "sem tempo para tentar"}).`);
+
+  for (const model of geminiModels()) {
+    for (let attempt = 0; ; attempt++) {
+      if (left() < GEMINI_MIN_ATTEMPT_MS) throw failed();
+      const limit = Math.min(GEMINI_ATTEMPT_TIMEOUT_MS, left());
+      try {
+        return { result: await requestGemini(model, prompt, opts.system ?? SYSTEM_PROMPT, key, AbortSignal.timeout(limit)), model };
+      } catch (e: any) {
+        const timedOut = e.name === "TimeoutError" || e.name === "AbortError";
+        failures.push(`${model}: ${timedOut ? `sem resposta em ${Math.round(limit / 1000)}s` : e.message}`);
+        // timeout e erro de rede também passam pro próximo modelo
+        const action = e instanceof GeminiFailure ? e.action : "next";
+        if (action === "stop") throw failed();
+        if (action === "next" || attempt >= RETRY_WAITS_MS.length) break;
+        await new Promise((r) => setTimeout(r, RETRY_WAITS_MS[attempt]));
       }
     }
-    throw new Error(`${lastErr.message} (${tries} tentativas)`);
-  } catch (e: any) {
-    if (e.name === "AbortError") throw new Error(`Gemini demorou mais de ${GEMINI_TIMEOUT_MS / 1000}s para responder (${tries} tentativas).`);
-    throw e;
-  } finally {
-    clearTimeout(timer);
   }
+  throw failed();
 }
 
 const strList = (v: unknown, max: number) => (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string" && !!s.trim()).slice(0, max) : []);
 
 /** Monta o que vai pro Gemini: números prontos + tickets da semana, anonimizados. */
-export function buildAiInput(tickets: Ticket[], data: ReportData, metas: SlaMetas, now: Date) {
+export function buildAiInput(tickets: Ticket[], data: ReportData, metas: SlaMetas, now: Date, opts: { segment?: ReportSegment; allClientNames?: string[] } = {}) {
+  const segment = opts.segment ?? "all";
+  const system = systemPromptFor(segment);
   const r = rangeOf(data.weekStart);
   const all = tickets.map((t) => derive(t, now, true, metas));
   const { created, moved } = scopeOf(all, r);
@@ -481,7 +577,8 @@ export function buildAiInput(tickets: Ticket[], data: ReportData, metas: SlaMeta
     .slice(0, MAX_TICKETS_AI);
   if (!set.length) throw new Error("Nenhum ticket criado ou movimentado nesta semana: nada para a IA analisar.");
 
-  const anon = makeAnonymizer(tickets.map((t) => t.cliente));
+  // No recorte KA os nomes vêm da base inteira: um ticket KA pode citar um cliente de fora do grupo.
+  const anon = makeAnonymizer(opts.allClientNames ?? tickets.map((t) => t.cliente));
   const ticketsAi = set.map((x) => ({
     id: x.t.id,
     origem: createdIds.has(x.t.id) ? "criado na semana" : "movimentado na semana",
@@ -506,11 +603,20 @@ export function buildAiInput(tickets: Ticket[], data: ReportData, metas: SlaMeta
     semana_anterior: data.prev,
     tickets_da_semana_em_aberto: data.scopeOpen,
     tickets_da_semana_com_sla_estourado: data.scopeLate,
-    por_prioridade: data.byPriority,
+    criados_com_sla_estourado: created.filter((x) => x.late).length,
+    movimentados_com_sla_estourado: moved.filter((x) => x.late).length,
+    por_prioridade: data.byPriority.map(({ open, late, ...p }) => ({ ...p, em_aberto_criados_mais_movimentados: open, sla_estourado_criados_mais_movimentados: late })),
     em_aberto_por_etapa: data.byStageOpen,
     clientes_com_mais_tickets: data.topClients.map((c) => ({ cliente: anon.aliasOf(c.cliente), tickets: c.n })),
     titulos_repetidos: data.repeatedTitles.map((t) => ({ titulo: anon.scrub(t.titulo), tickets: t.n })),
     destaques: data.highlights.map((h) => anon.scrub(h.texto)),
+    ...(data.byClient && {
+      por_cliente: data.byClient.map((c) => ({ cliente: anon.aliasOf(c.name), criados: c.created, movimentados: c.moved, em_aberto: c.open, sla_estourado: c.late })),
+    }),
+    ...(data.byJourney && {
+      por_jornada: data.byJourney.map((j) => ({ jornada: anon.scrub(j.name), criados: j.created, movimentados: j.moved, em_aberto: j.open, sla_estourado: j.late })),
+    }),
+    ...(data.weekly && { evolucao_semanal: data.weekly.map((w) => ({ semana_iniciada_em: ddmm(w.weekStart), criados: w.created })) }),
   };
   const prompt = `METRICAS (JSON):\n${JSON.stringify(metricas)}\n\nTICKETS da semana (${set.length}${set.length === MAX_TICKETS_AI ? ", limitado aos mais prioritários" : ""}) (JSON):\n${JSON.stringify(ticketsAi)}`;
 
@@ -521,7 +627,7 @@ export function buildAiInput(tickets: Ticket[], data: ReportData, metas: SlaMeta
       JSON.stringify({
         v: REPORT_VERSION,
         model: geminiModel(),
-        prompt: SYSTEM_PROMPT,
+        prompt: system,
         week: data.weekStart,
         partial: data.partial,
         metas,
@@ -530,12 +636,13 @@ export function buildAiInput(tickets: Ticket[], data: ReportData, metas: SlaMeta
     )
     .digest("hex");
   const ids = set.map((x) => x.t.id);
-  return { prompt, createdIds: ids.filter((id) => createdIds.has(id)), movedIds: ids.filter((id) => !createdIds.has(id)), anon, inputHash };
+  return { prompt, system, createdIds: ids.filter((id) => createdIds.has(id)), movedIds: ids.filter((id) => !createdIds.has(id)), anon, inputHash };
 }
 
-function parseAi(out: any, created: Set<string>, moved: Set<string>, unalias: (s: string) => string): ReportAi {
+/** `oneThemePerTicket`: cada ticket criado conta em um tema só (no KA, os temas viram a contagem por motivo). */
+function parseAi(out: any, created: Set<string>, moved: Set<string>, unalias: (s: string) => string, oneThemePerTicket = false): ReportAi {
   const impacto = (v: unknown): ReportTheme["impacto"] => (v === "alto" || v === "baixo" ? v : "medio");
-  const themes = (v: unknown, known: Set<string>, max: number): ReportTheme[] =>
+  const themes = (v: unknown, known: Set<string>, max: number, seen?: Set<string>): ReportTheme[] =>
     (Array.isArray(v) ? v : [])
       .slice(0, max)
       .map((t: any) => ({
@@ -543,12 +650,16 @@ function parseAi(out: any, created: Set<string>, moved: Set<string>, unalias: (s
         descricao: unalias(String(t?.descricao ?? "")),
         impacto: impacto(t?.impacto),
         // descarta ids inventados e ids do outro grupo (criado x movimentado)
-        ticketIds: strList(t?.ticketIds, 50).filter((id) => known.has(id)),
+        ticketIds: strList(t?.ticketIds, 50).filter((id) => {
+          if (!known.has(id) || seen?.has(id)) return false;
+          seen?.add(id);
+          return true;
+        }),
       }))
       .filter((t) => t.titulo && t.ticketIds.length);
   return {
     resumo: unalias(typeof out?.resumo === "string" ? out.resumo.trim() : ""),
-    temasCriados: themes(out?.temasCriados, created, 7),
+    temasCriados: themes(out?.temasCriados, created, 7, oneThemePerTicket ? new Set() : undefined),
     temasMovimentados: themes(out?.temasMovimentados, moved, 5),
     riscos: strList(out?.riscos, 5).map(unalias),
     recomendacoes: strList(out?.recomendacoes, 5).map(unalias),
@@ -563,31 +674,35 @@ export type GenerateResult = TicketReportRow & { aiReused: boolean };
  * Busca os tickets no bot, calcula os números, pede o texto ao Gemini e grava.
  * Se os tickets da semana não mudaram desde a última geração com texto, reaproveita
  * o texto salvo em vez de chamar a IA de novo. Sem IA, grava só os números.
+ * `segment: "ka"` faz o mesmo só com os clientes do grupo /ka do bot. `deadline` (epoch ms)
+ * é a hora-limite pra IA, usada quando a mesma execução gera mais de um relatório.
  */
-export async function generateTicketReport(weekStart = lastCompleteWeek()): Promise<GenerateResult> {
+export async function generateTicketReport(weekStart = lastCompleteWeek(), opts: { segment?: ReportSegment; deadline?: number } = {}): Promise<GenerateResult> {
+  const segment = opts.segment ?? "all";
   const exp = await fetchBotExport();
-  const { tickets } = parseTicketsApi(exp);
+  const { tickets: allTickets } = parseTicketsApi(exp);
+  const tickets = segment === "ka" ? kaTickets(exp, allTickets) : allTickets;
   const settings = await getSettings();
   const metas: SlaMetas = { ...DEFAULT_META, ...settings.ticketSlaHours };
   const now = new Date();
-  const data = computeReportData(tickets, metas, weekStart, now, exp.snapshotAt ?? null);
+  const data = computeReportData(tickets, metas, weekStart, now, exp.snapshotAt ?? null, { segment, missingClientJourneys: exp.missingClientJourneys });
 
   let ai: ReportAi | null = null;
   let aiError: string | null = null;
   let inputHash: string | null = null;
   let model: string | null = null;
   let aiReused = false;
-  const saved = await getTicketReport(weekStart);
+  const saved = await getTicketReport(weekStart, segment);
   try {
-    const input = buildAiInput(tickets, data, metas, now);
+    const input = buildAiInput(tickets, data, metas, now, { segment, allClientNames: allTickets.map((t) => t.cliente) });
     inputHash = input.inputHash;
     if (saved?.ai && saved.aiInputHash === inputHash) {
       ai = saved.ai as ReportAi;
       model = saved.model;
       aiReused = true;
     } else {
-      const res = await callGemini(input.prompt);
-      ai = parseAi(res.result, new Set(input.createdIds), new Set(input.movedIds), input.anon.unalias);
+      const res = await callGemini(input.prompt, { system: input.system, deadline: opts.deadline });
+      ai = parseAi(res.result, new Set(input.createdIds), new Set(input.movedIds), input.anon.unalias, segment === "ka");
       model = res.model;
     }
   } catch (e: any) {
@@ -602,6 +717,6 @@ export async function generateTicketReport(weekStart = lastCompleteWeek()): Prom
       aiError = e.message;
     }
   }
-  await saveTicketReport({ weekStart, data, ai, aiError, model, aiInputHash: ai ? inputHash : null });
+  await saveTicketReport({ weekStart, data, ai, aiError, model, aiInputHash: ai ? inputHash : null }, segment);
   return { weekStart, generatedAt: now.toISOString(), data, ai, aiError, model, aiInputHash: ai ? inputHash : null, aiReused };
 }
