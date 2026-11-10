@@ -227,15 +227,17 @@ function breakdown(scope: Derived[], createdIds: Set<string>, keysOf: (x: Derive
     .sort((a, b) => b.created - a.created || b.moved - a.moved || a.name.localeCompare(b.name, "pt-BR"));
 }
 
-/** Comando do grupo de jornada do bot que define quem é cliente KA. */
-const KA_GROUP = "ka";
+/**
+ * Jornadas da SoftCS que definem quem é cliente KA. Não usa o grupo /ka do bot: ele
+ * também tem "Plano de Ação - Adoção", que traz clientes de fora do KA (ex.: PMEs em engajamento).
+ */
+export const KA_JOURNEYS = ["Engajamento - KA", "Adoção KA"];
+const isKaJourney = (j: string) => KA_JOURNEYS.includes(j);
 
-/** Tickets dos clientes do grupo /ka, com erro claro se o bot publicado ainda não informa os grupos. */
-function kaTickets(exp: ApiExport, tickets: Ticket[]) {
-  if (!exp.tickets.some((t) => Array.isArray(t.client?.groups)))
-    throw new BotError("O SoftCS Bot publicado ainda não informa os grupos de jornada: publique a versão que envia client.groups na exportação.", 502);
-  const ka = tickets.filter((t) => t.groups.includes(KA_GROUP));
-  if (!ka.length) throw new BotError(`Nenhum ticket de cliente do grupo /${KA_GROUP}: confira as jornadas do grupo na aba Jornadas do SoftCS Bot.`, 502);
+/** Tickets dos clientes que estão numa jornada KA. */
+function kaTickets(tickets: Ticket[]) {
+  const ka = tickets.filter((t) => t.journeys.some(isKaJourney));
+  if (!ka.length) throw new BotError(`Nenhum ticket de cliente nas jornadas ${KA_JOURNEYS.join(" ou ")}: confira se os nomes das jornadas mudaram na SoftCS.`, 502);
   return ka;
 }
 
@@ -371,7 +373,7 @@ export function computeReportData(
     tickets: tickets_,
     ...(opts.segment === "ka" && {
       byClient: breakdown(scope, createdIds, (x) => [x.t.cliente]),
-      byJourney: breakdown(scope, createdIds, (x) => x.t.journeys),
+      byJourney: breakdown(scope, createdIds, (x) => x.t.journeys.filter(isKaJourney)),
       weekly: Array.from({ length: 8 }, (_, i) => {
         const start = addDays(weekStart, (i - 7) * 7);
         const range = rangeOf(start);
@@ -684,7 +686,7 @@ export async function generateTicketReport(weekStart = lastCompleteWeek(), opts:
   const segment = opts.segment ?? "all";
   const exp = await fetchBotExport();
   const { tickets: allTickets } = parseTicketsApi(exp);
-  const tickets = segment === "ka" ? kaTickets(exp, allTickets) : allTickets;
+  const tickets = segment === "ka" ? kaTickets(allTickets) : allTickets;
   const settings = await getSettings();
   const metas: SlaMetas = { ...DEFAULT_META, ...settings.ticketSlaHours };
   const now = new Date();

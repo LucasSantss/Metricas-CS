@@ -243,7 +243,7 @@ export default function TicketReportView({ segment = "all" }: { segment?: Report
             {report
               ? `Gerado em ${fmtWhen(report.generatedAt)}`
               : "Atualizado automaticamente todo dia às 9h com a semana em andamento"}
-            {isKa && " · só clientes do grupo /ka do SoftCS Bot"}
+            {isKa && " · só clientes das jornadas Engajamento - KA e Adoção KA"}
           </div>
         </header>
 
@@ -594,7 +594,7 @@ export default function TicketReportView({ segment = "all" }: { segment?: Report
               {isKa && (
                 <>
                   {" "}
-                  Entram os clientes que estão hoje numa jornada do grupo /ka, inclusive nas semanas anteriores
+                  Entram os clientes que estão hoje nas jornadas Engajamento - KA ou Adoção KA, inclusive nas semanas anteriores
                   {d.missingClientJourneys ? `; ${d.missingClientJourneys} cliente(s) da base ainda sem jornada conhecida pelo bot ficaram de fora` : ""}.
                 </>
               )}
