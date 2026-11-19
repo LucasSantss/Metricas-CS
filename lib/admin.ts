@@ -7,7 +7,8 @@ import { isAdminRow } from "./db";
  * Os demais ficam na tabela `admins` (adicionados por um administrador em Ajustes > Administradores).
  * Só administradores veem a aba Conversas e os Ajustes; as outras abas são de todos.
  */
-export const SUPER_ADMIN = "lucasrodrigues@chatbotmaker.io";
+// SUPER_ADMIN_EMAIL (env) substitui o padrão sem precisar mexer no código.
+export const SUPER_ADMIN = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase() || "lucasrodrigues@chatbotmaker.io";
 
 export async function isAdmin(email?: string | null): Promise<boolean> {
   if (!email || !isAllowedEmail(email)) return false;

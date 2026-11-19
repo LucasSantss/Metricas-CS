@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getTicketReport, type ReportSegment } from "./db";
 import { REPORT_VERSION, generateTicketReport, lastCompleteWeek, weekStartOf, type ReportData } from "./ticketReport";
+import { isCronRequest } from "./security";
 
 // A função tem 300s no total. A semana anterior (só tem IA de verdade na segunda) não pode
 // gastar tudo: guarda tempo pra semana atual, e os dois limites deixam folga pra gravar.
@@ -20,8 +21,7 @@ const TOTAL_BUDGET_MS = 270_000;
  * disparar o Gemini de fora.
  */
 export async function runTicketReportCron(req: NextRequest, segment: ReportSegment) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!isCronRequest(req)) {
     return NextResponse.json({ error: "não autorizado" }, { status: 401 });
   }
 

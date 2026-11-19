@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { deleteDepartment, listDepartments, upsertDepartment } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin";
+import { errorJson } from "@/lib/security";
 
 export const runtime = "nodejs";
 
@@ -9,7 +10,7 @@ export async function GET() {
     const departments = await listDepartments();
     return NextResponse.json({ departments });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }
 
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ department: dept });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }
 
@@ -56,6 +57,6 @@ export async function DELETE(req: NextRequest) {
     await deleteDepartment(id);
     return NextResponse.json({ ok: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }

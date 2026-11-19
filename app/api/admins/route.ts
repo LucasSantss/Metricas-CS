@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { ALLOWED_DOMAIN, isAllowedEmail } from "@/auth";
 import { deleteAdmin, insertAdmin, listAdminRows } from "@/lib/db";
 import { SUPER_ADMIN, currentAdmin } from "@/lib/admin";
+import { errorJson } from "@/lib/security";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,7 @@ export async function GET() {
       admins: [{ email: SUPER_ADMIN, addedBy: null, createdAt: null, fixed: true }, ...rows.filter((r) => r.email !== SUPER_ADMIN).map((r) => ({ ...r, fixed: false }))],
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }
 
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
     if (email !== SUPER_ADMIN) await insertAdmin(email, me);
     return NextResponse.json({ ok: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }
 
@@ -45,6 +46,6 @@ export async function DELETE(req: NextRequest) {
     await deleteAdmin(email);
     return NextResponse.json({ ok: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }

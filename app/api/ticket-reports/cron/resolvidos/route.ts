@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { addDays, weekStartOf } from "@/lib/ticketReport";
 import { generateResolved, loadResolvedContext } from "@/lib/resolvedReport";
+import { isCronRequest, publicError } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,8 +20,7 @@ const TOTAL_BUDGET_MS = 270_000;
  * Fica sob /api/ticket-reports/cron, que o middleware libera do login; a proteção é o CRON_SECRET.
  */
 export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret || req.headers.get("authorization") !== `Bearer ${secret}`) {
+  if (!isCronRequest(req)) {
     return NextResponse.json({ error: "não autorizado" }, { status: 401 });
   }
   const startedAt = Date.now();
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
     }
   } catch (err: any) {
     console.error("Falha ao buscar tickets para os resolvidos:", err);
-    return NextResponse.json({ ok: false, error: err.message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: publicError(err) }, { status: 500 });
   }
   return NextResponse.json({ ok: !failed, ...result }, { status: failed ? 500 : 200 });
 }

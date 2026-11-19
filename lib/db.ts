@@ -49,7 +49,18 @@ export type Department = {
   attendantIds: string[];
 };
 
-export async function ensureSchema() {
+// Cria/atualiza as tabelas uma vez por instância do servidor (antes rodava em toda consulta).
+// Se falhar, a próxima chamada tenta de novo.
+let schemaReady: Promise<void> | null = null;
+export function ensureSchema(): Promise<void> {
+  schemaReady ??= createSchema().catch((err) => {
+    schemaReady = null;
+    throw err;
+  });
+  return schemaReady;
+}
+
+async function createSchema() {
   const sql = getSql();
   await sql`
     CREATE TABLE IF NOT EXISTS app_settings (
@@ -160,6 +171,16 @@ export async function ensureSchema() {
       ai_input_hash TEXT,
       PRIMARY KEY (week_start, segment)
     )
+  `;
+  // limite de uso das gerações com IA (lib/rateLimit.ts)
+  await sql`
+    CREATE TABLE IF NOT EXISTS rate_events (
+      bucket TEXT NOT NULL,
+      at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS rate_events_bucket_at ON rate_events (bucket, at)
   `;
   await sql`
     CREATE TABLE IF NOT EXISTS admins (
@@ -530,4 +551,20 @@ export async function saveResolvedOverview(r: Omit<ResolvedOverviewRow, "generat
        ai_error = EXCLUDED.ai_error, model = EXCLUDED.model, ai_input_hash = EXCLUDED.ai_input_hash`,
     [r.weekStart, r.segment, r.partial, r.ticketCount, r.ai == null ? null : JSON.stringify(r.ai), r.aiError, r.model, r.aiInputHash]
   );
+}
+
+/**
+ * Registra um uso de `bucket` se ainda couber no limite (`max` usos em `windowSec` segundos).
+ * true = permitido (e já contado); false = limite atingido. Limpa os registros vencidos na mesma consulta.
+ */
+export async function hitRateLimit(bucket: string, max: number, windowSec: number): Promise<boolean> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql(
+    `WITH old AS (DELETE FROM rate_events WHERE at < now() - make_interval(secs => $3)),
+          used AS (SELECT count(*)::int AS n FROM rate_events WHERE bucket = $1 AND at >= now() - make_interval(secs => $3))
+     INSERT INTO rate_events (bucket) SELECT $1 FROM used WHERE n < $2 RETURNING 1`,
+    [bucket, max, windowSec]
+  );
+  return rows.length > 0;
 }

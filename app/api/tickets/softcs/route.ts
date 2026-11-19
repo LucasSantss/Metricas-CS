@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { BotError, fetchBotExport } from "@/lib/softcsBot";
+import { errorJson } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(body, { headers: { "Cache-Control": "no-store" } });
   } catch (err: any) {
     const status = err instanceof BotError ? err.status : 502;
-    return NextResponse.json({ error: err.message }, { status });
+    return errorJson(err, status);
   }
 }

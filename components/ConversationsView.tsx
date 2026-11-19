@@ -132,8 +132,19 @@ function rich(text: string): ReactNode[] {
   return out;
 }
 
+/** Só links http(s): um "javascript:" vindo da API não vira link clicável. */
+const safeUrl = (url: string | null | undefined) => (url && /^https?:\/\//i.test(url) ? url : undefined);
+/** decodeURIComponent que não derruba a tela com um "%" solto no nome do arquivo. */
+const safeDecode = (s: string) => {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+};
+
 function attachmentKind(url: string, contentType?: string) {
-  const path = decodeURIComponent(url.split("?")[0]).toLowerCase();
+  const path = safeDecode(url.split("?")[0]).toLowerCase();
   const ct = contentType?.toLowerCase() ?? "";
   if (ct.startsWith("image/") || /\.(jpe?g|png|gif|webp|bmp)$/.test(path)) return "image";
   if (ct.startsWith("audio/") || /\.(ogg|oga|opus|mp3|m4a|wav|aac)$/.test(path)) return "audio";
@@ -145,16 +156,16 @@ function Attachment({ a }: { a: NonNullable<Message["attachment"]> }) {
   const kind = attachmentKind(a.url, a.contentType);
   if (kind === "image")
     return (
-      <a href={a.url} target="_blank" rel="noreferrer" className="cv-media">
+      <a href={safeUrl(a.url)} target="_blank" rel="noreferrer" className="cv-media">
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={a.url} alt={a.name ?? "imagem"} loading="lazy" />
+        <img src={safeUrl(a.url)} alt={a.name ?? "imagem"} loading="lazy" />
       </a>
     );
-  if (kind === "audio") return <audio className="cv-audio" controls preload="none" src={a.url} />;
-  if (kind === "video") return <video className="cv-media" controls preload="none" src={a.url} />;
-  const name = a.name || decodeURIComponent(a.url.split("?")[0].split("/").pop() ?? "arquivo").replace(/^user_files\//, "");
+  if (kind === "audio") return <audio className="cv-audio" controls preload="none" src={safeUrl(a.url)} />;
+  if (kind === "video") return <video className="cv-media" controls preload="none" src={safeUrl(a.url)} />;
+  const name = a.name || safeDecode(a.url.split("?")[0].split("/").pop() ?? "arquivo").replace(/^user_files\//, "");
   return (
-    <a href={a.url} target="_blank" rel="noreferrer" className="cv-file">
+    <a href={safeUrl(a.url)} target="_blank" rel="noreferrer" className="cv-file">
       <Icon name="document" />
       <span>{name}</span>
     </a>
@@ -166,7 +177,7 @@ function Avatar({ url, name, size = 40 }: { url: string | null; name: string; si
   const style = { width: size, height: size, fontSize: size * 0.4 };
   if (url && !broken)
     // eslint-disable-next-line @next/next/no-img-element
-    return <img className="cv-avatar" style={style} src={url} alt="" loading="lazy" onError={() => setBroken(true)} />;
+    return <img className="cv-avatar" style={style} src={safeUrl(url)} alt="" loading="lazy" onError={() => setBroken(true)} />;
   return (
     <span className="cv-avatar cv-avatar-fallback" style={style}>
       {initial(name)}

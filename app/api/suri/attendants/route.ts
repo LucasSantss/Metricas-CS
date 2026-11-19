@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSettings } from "@/lib/db";
 import { fetchAttendants } from "@/lib/suri";
 import { requireAdmin } from "@/lib/admin";
+import { errorJson } from "@/lib/security";
 
 export const runtime = "nodejs";
 
@@ -20,6 +21,6 @@ export async function GET(req: NextRequest) {
     const attendants = await fetchAttendants(settings.chatbotUrl, settings.bearerToken, departmentId);
     return NextResponse.json({ attendants });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }

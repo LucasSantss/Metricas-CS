@@ -3,6 +3,8 @@ import { BotError } from "@/lib/softcsBot";
 import { isWeekStart, weekStartOf } from "@/lib/ticketReport";
 import { generateResolved, getResolvedWeek } from "@/lib/resolvedReport";
 import { segmentOptions } from "@/lib/resolved";
+import { errorJson } from "@/lib/security";
+import { limitAiGeneration } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +21,7 @@ function weekOf(v: unknown): string | NextResponse {
   return week;
 }
 
-const fail = (err: any) => NextResponse.json({ error: err.message }, { status: err instanceof BotError ? err.status : 500 });
+const fail = (err: any) => errorJson(err, err instanceof BotError ? err.status : 500);
 
 /** GET ?week=YYYY-MM-DD (padrão: semana atual): tickets resolvidos na semana, ao vivo, com os textos da IA já salvos. Nunca chama a IA. */
 export async function GET(req: NextRequest) {
@@ -45,6 +47,8 @@ export async function POST(req: NextRequest) {
     const segment = typeof body?.segment === "string" && body.segment ? body.segment : "all";
     if (segment !== "all" && segment !== "ka" && !/^g:[\w-]+$/.test(segment))
       return NextResponse.json({ error: "Recorte inválido." }, { status: 400 });
+    const limited = await limitAiGeneration();
+    if (limited) return limited;
     const out = await generateResolved([week], { segments: [segment], deadline });
     const r = out[week];
     if (segment.startsWith("g:") && !segmentOptions(r.rows).includes(segment))

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSettings, listDepartments } from "@/lib/db";
 import { fetchAttendances, extractChatbotId, type SuriAttendance } from "@/lib/suri";
 import { dayRange, monthRange, previousDayRange, previousMonthRange, previousWeek, weekRangeForMonday } from "@/lib/weeks";
+import { errorJson } from "@/lib/security";
 import {
   buildReport,
   cleanRecordsForWindow,
@@ -139,6 +140,6 @@ export async function GET(req: NextRequest) {
       periodAttendants,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }

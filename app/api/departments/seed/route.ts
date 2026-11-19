@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { upsertDepartment } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin";
+import { errorJson } from "@/lib/security";
 
 export const runtime = "nodejs";
 
@@ -26,6 +27,6 @@ export async function POST() {
     );
     return NextResponse.json({ departments });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }

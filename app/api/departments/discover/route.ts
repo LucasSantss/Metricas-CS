@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, listDepartments } from "@/lib/db";
 import { fetchDepartments } from "@/lib/suri";
 import { requireAdmin } from "@/lib/admin";
+import { errorJson } from "@/lib/security";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,6 @@ export async function POST() {
 
     return NextResponse.json({ departments });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }

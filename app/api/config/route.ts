@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings, saveSettings, type TicketSlaHours } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin";
+import { checkSuriUrl, errorJson, hostOf } from "@/lib/security";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,7 @@ export async function GET() {
       ticketSlaHours: settings.ticketSlaHours,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }
 
@@ -40,9 +41,19 @@ export async function POST(req: NextRequest) {
       }
       input.ticketSlaHours = sla;
     }
+    // O token salvo nunca vai pra um endereço novo: trocar o host exige informar o token de novo
+    // (senão quem trocasse o endereço receberia o token no próximo acesso à Suri).
+    if (input.chatbotUrl) {
+      const bad = checkSuriUrl(input.chatbotUrl);
+      if (bad) return NextResponse.json({ error: bad }, { status: 400 });
+      const current = await getSettings();
+      if (!current.connectionLocked && current.bearerToken && !input.bearerToken && hostOf(input.chatbotUrl) !== hostOf(current.chatbotUrl)) {
+        return NextResponse.json({ error: "Ao trocar o endereço do chatbot, informe o token de novo." }, { status: 400 });
+      }
+    }
     await saveSettings(input);
     return NextResponse.json({ ok: true });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }

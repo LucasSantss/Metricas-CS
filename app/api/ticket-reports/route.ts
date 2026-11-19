@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTicketReport, listTicketReports, type ReportSegment } from "@/lib/db";
 import { REPORT_VERSION, generateTicketReport, isWeekStart, lastCompleteWeek, weekStartOf, type ReportData } from "@/lib/ticketReport";
 import { BotError } from "@/lib/softcsBot";
+import { errorJson } from "@/lib/security";
+import { limitAiGeneration } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,7 +26,7 @@ export async function GET(req: NextRequest) {
     if (!report) return NextResponse.json({ error: "Relatório ainda não gerado para esta semana." }, { status: 404 });
     return NextResponse.json(report);
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }
 
@@ -55,8 +57,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
+    const limited = await limitAiGeneration();
+    if (limited) return limited;
     return NextResponse.json(await generateTicketReport(week, { segment }));
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: err instanceof BotError ? err.status : 500 });
+    return errorJson(err, err instanceof BotError ? err.status : 500);
   }
 }

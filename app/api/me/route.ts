@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { SUPER_ADMIN, isAdmin } from "@/lib/admin";
+import { errorJson } from "@/lib/security";
 
 export const runtime = "nodejs";
 
@@ -10,6 +11,6 @@ export async function GET() {
     const email = (await auth())?.user?.email?.toLowerCase() ?? null;
     return NextResponse.json({ email, isAdmin: await isAdmin(email), isSuperAdmin: email === SUPER_ADMIN });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }

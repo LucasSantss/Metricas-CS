@@ -5,6 +5,7 @@ import { dayRange, monthRange, weekRangeForMonday } from "@/lib/weeks";
 import { cleanRecordsForWindow, recordsForDepartment, recordsForAttendants, buildPeriodAttendants } from "@/lib/metrics";
 import { computePercentileStats, buildP90Entries } from "@/lib/percentiles";
 import type { SuriAttendance } from "@/lib/suri";
+import { errorJson } from "@/lib/security";
 
 export const runtime = "nodejs";
 
@@ -123,6 +124,6 @@ export async function GET(req: NextRequest) {
       periodAttendants,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }

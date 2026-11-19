@@ -3,6 +3,7 @@ import { getSettings, listDepartments } from "@/lib/db";
 import { fetchAttendants, fetchChannels, fetchContact, fetchContacts, fetchDepartments, type SuriContact } from "@/lib/suri";
 import { toConversationDto } from "@/lib/conversations";
 import { requireAdmin } from "@/lib/admin";
+import { errorJson } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -89,6 +90,6 @@ export async function GET(req: NextRequest) {
       scannedUntil: scan.truncated ? scannedUntil : null,
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }

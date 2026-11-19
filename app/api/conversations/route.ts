@@ -4,6 +4,7 @@ import { extractChatbotId, fetchAttendants, fetchContacts, fetchDepartments } fr
 import { startOfTodayBrasilia, toConversationDto } from "@/lib/conversations";
 import type { ConversationContactDto } from "@/lib/types";
 import { requireAdmin } from "@/lib/admin";
+import { errorJson } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -66,6 +67,6 @@ export async function GET(req: NextRequest) {
       chatbotId: extractChatbotId(settings.chatbotUrl),
     });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return errorJson(err);
   }
 }
