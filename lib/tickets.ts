@@ -38,6 +38,8 @@ export type Ticket = {
   groups: string[];
   /** Jornadas ativas do cliente na SoftCS. Só a leitura ao vivo traz. */
   journeys: string[];
+  /** Quando o ticket foi encerrado (closedAt da SoftCS). Só a leitura ao vivo traz; pode faltar mesmo nela. */
+  closed: Date | null;
 };
 
 export type Derived = {
@@ -329,6 +331,7 @@ type TicketFields = {
   u: Date;
   groups?: string[];
   journeys?: string[];
+  closed?: Date | null;
 };
 
 /** Monta um Ticket (com as chaves de mês/semana/dia já calculadas) a partir dos campos crus — compartilhado pelo .xlsx e pela API. */
@@ -358,6 +361,7 @@ function makeTicket(x: TicketFields): Ticket {
     bulk: false,
     groups: x.groups ?? [],
     journeys: (x.journeys ?? []).map((j) => j.trim()),
+    closed: x.closed ?? null,
   };
 }
 
@@ -446,6 +450,7 @@ export function parseTicketsApi(data: ApiExport): ParsedFile {
     const c = t.createdAt ? new Date(t.createdAt) : null;
     if (!c || isNaN(+c)) continue;
     const u = t.updatedAt ? new Date(t.updatedAt) : c;
+    const closed = t.closedAt ? new Date(t.closedAt) : null;
     tickets.push(
       makeTicket({
         id: t.publicId ?? t.id,
@@ -463,6 +468,7 @@ export function parseTicketsApi(data: ApiExport): ParsedFile {
         u: isNaN(+u) ? c : u,
         groups: t.client?.groups,
         journeys: t.client?.journeyNames,
+        closed: closed && !isNaN(+closed) ? closed : null,
       })
     );
   }
@@ -485,6 +491,13 @@ const hasTag = (tags: string[], wanted: string, none: string) => (wanted === non
 export const journeyOptions = (tickets: Ticket[]) => tagOptions(tickets.map((t) => t.journeys), SEM_JORNADA);
 export const groupOptions = (tickets: Ticket[]) => tagOptions(tickets.map((t) => t.groups), SEM_GRUPO);
 export const inGroup = (t: Ticket, group: string) => hasTag(t.groups, group, SEM_GRUPO);
+
+/**
+ * Jornadas da SoftCS que definem quem é cliente KA. Não usa o grupo /ka do bot: ele
+ * também tem "Plano de Ação - Adoção", que traz clientes de fora do KA (ex.: PMEs em engajamento).
+ */
+export const KA_JOURNEYS = ["Engajamento - KA", "Adoção KA"];
+export const isKaJourney = (j: string) => KA_JOURNEYS.includes(j);
 
 // O bot só envia o comando do grupo; comando sem nome aqui aparece como no Telegram (/comando).
 const GROUP_NAMES: Record<string, string> = { ka: "KA", adocao: "Adoção", [SEM_GRUPO]: SEM_GRUPO };

@@ -17,10 +17,12 @@ import { BotError, fetchBotExport } from "./softcsBot";
 import { getSettings, getTicketReport, saveTicketReport, type ReportSegment, type TicketReportRow } from "./db";
 import {
   DEFAULT_META,
+  KA_JOURNEYS,
   PRI_KEYS,
   derive,
   fmtHours,
   isInat,
+  isKaJourney,
   mean,
   median,
   norm,
@@ -65,7 +67,7 @@ const rangeOf = (weekStart: string) => {
 };
 const ddmm = (ymd: string) => `${ymd.slice(8, 10)}/${ymd.slice(5, 7)}`;
 export const weekLabel = (weekStart: string) => `${ddmm(weekStart)} a ${ddmm(addDays(weekStart, 6))}/${addDays(weekStart, 6).slice(0, 4)}`;
-const fmtBrt = (d: Date) =>
+export const fmtBrt = (d: Date) =>
   new Intl.DateTimeFormat("pt-BR", { timeZone: TZ, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).format(d);
 
 /* ---------- formato salvo no banco ---------- */
@@ -227,12 +229,7 @@ function breakdown(scope: Derived[], createdIds: Set<string>, keysOf: (x: Derive
     .sort((a, b) => b.created - a.created || b.moved - a.moved || a.name.localeCompare(b.name, "pt-BR"));
 }
 
-/**
- * Jornadas da SoftCS que definem quem é cliente KA. Não usa o grupo /ka do bot: ele
- * também tem "Plano de Ação - Adoção", que traz clientes de fora do KA (ex.: PMEs em engajamento).
- */
-export const KA_JOURNEYS = ["Engajamento - KA", "Adoção KA"];
-const isKaJourney = (j: string) => KA_JOURNEYS.includes(j);
+export { KA_JOURNEYS };
 
 /** Tickets dos clientes que estão numa jornada KA. */
 function kaTickets(tickets: Ticket[]) {
@@ -394,9 +391,12 @@ const GEMINI_TIMEOUT_MS = 240_000;
 // O relatório normal leva ~20s nos modelos que estão respondendo.
 const GEMINI_ATTEMPT_TIMEOUT_MS = 90_000;
 const GEMINI_MIN_ATTEMPT_MS = 15_000;
+// Sem resposta nesse tempo, o próximo modelo começa em paralelo (ver callGemini).
+const GEMINI_HEDGE_MS = 30_000;
+const GEMINI_MAX_PARALLEL = 3;
 
 /** Troca nomes de cliente por CLIENTE_N e tira e-mails/telefones antes de mandar pro Gemini. */
-function makeAnonymizer(clientNames: string[]) {
+export function makeAnonymizer(clientNames: string[]) {
   const alias = new Map<string, string>();
   const byName = [...new Set(clientNames.filter((c) => c && c !== "—"))].sort((a, b) => b.length - a.length);
   byName.forEach((c, i) => alias.set(c, `CLIENTE_${i + 1}`));
@@ -490,7 +490,7 @@ class GeminiFailure extends Error {
   }
 }
 
-async function requestGemini(model: string, prompt: string, system: string, key: string, signal: AbortSignal): Promise<unknown> {
+async function requestGemini(model: string, prompt: string, system: string, schema: object, key: string, signal: AbortSignal): Promise<unknown> {
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
@@ -500,7 +500,7 @@ async function requestGemini(model: string, prompt: string, system: string, key:
       generationConfig: {
         temperature: 0.3,
         responseMimeType: "application/json",
-        responseSchema: RESPONSE_SCHEMA,
+        responseSchema: schema,
         // "Raciocínio" baixo: o texto se apoia em números já calculados, e o raciocínio
         // longo era o que fazia a resposta passar de 50s. A família 2.x não aceita esse campo.
         ...(/^gemini-2/.test(model) ? {} : { thinkingConfig: { thinkingLevel: "low" } }),
@@ -534,37 +534,84 @@ async function requestGemini(model: string, prompt: string, system: string, key:
 }
 
 /**
- * Pede o texto ao Gemini, percorrendo os modelos de geminiModels() em ordem. Cada tentativa tem
- * limite próprio: modelo que não responde perde a vez na hora; erro passageiro (503, 429, resposta
- * cortada) espera e tenta de novo no mesmo modelo; modelo inexistente (404) é pulado.
- * Tudo cabe em GEMINI_TIMEOUT_MS ou em `deadline` (epoch ms), o que vier antes.
+ * Pede o texto ao Gemini usando os modelos de geminiModels() em ordem, com "corrida":
+ * se um modelo não responde em GEMINI_HEDGE_MS, o próximo começa EM PARALELO (sem
+ * cancelar o primeiro) e vale a primeira resposta boa — os outros são cancelados.
+ * Assim um modelo travado não consome o tempo dos reservas. Erro de um modelo (404,
+ * cota esgotada, resposta cortada) passa a vez na hora pro próximo; erro passageiro
+ * (503, 429) tenta de novo no mesmo modelo depois de uma espera. Chave inválida para tudo.
+ * No máximo GEMINI_MAX_PARALLEL modelos ao mesmo tempo, e tudo cabe em GEMINI_TIMEOUT_MS
+ * ou em `deadline` (epoch ms), o que vier antes.
  */
-export async function callGemini(prompt: string, opts: { system?: string; deadline?: number } = {}): Promise<{ result: unknown; model: string }> {
+export async function callGemini(
+  prompt: string,
+  opts: { system?: string; schema?: object; deadline?: number } = {}
+): Promise<{ result: unknown; model: string }> {
   const key = process.env.GEMINI_API_KEY;
   if (!key) throw new Error("GEMINI_API_KEY não configurada: o relatório saiu só com os números.");
   const deadline = Math.min(Date.now() + GEMINI_TIMEOUT_MS, opts.deadline ?? Infinity);
   const left = () => deadline - Date.now();
+  const models = geminiModels();
   const failures: string[] = [];
   const failed = () => new Error(`O Gemini não respondeu (${[...new Set(failures)].join("; ") || "sem tempo para tentar"}).`);
+  const race = new AbortController(); // cancela quem ainda está rodando quando um modelo responde
+  let stop = false;
 
-  for (const model of geminiModels()) {
+  /** Um modelo, com as novas tentativas dele. Rejeita quando o modelo desiste. */
+  async function runModel(model: string): Promise<unknown> {
     for (let attempt = 0; ; attempt++) {
-      if (left() < GEMINI_MIN_ATTEMPT_MS) throw failed();
+      if (race.signal.aborted || stop) throw new Error("cancelado");
+      if (left() < GEMINI_MIN_ATTEMPT_MS) throw new Error("sem tempo");
       const limit = Math.min(GEMINI_ATTEMPT_TIMEOUT_MS, left());
       try {
-        return { result: await requestGemini(model, prompt, opts.system ?? SYSTEM_PROMPT, key, AbortSignal.timeout(limit)), model };
+        const signal = AbortSignal.any([race.signal, AbortSignal.timeout(limit)]);
+        return await requestGemini(model, prompt, opts.system ?? SYSTEM_PROMPT, opts.schema ?? RESPONSE_SCHEMA, key!, signal);
       } catch (e: any) {
+        if (race.signal.aborted) throw e; // outro modelo já respondeu
         const timedOut = e.name === "TimeoutError" || e.name === "AbortError";
         failures.push(`${model}: ${timedOut ? `sem resposta em ${Math.round(limit / 1000)}s` : e.message}`);
-        // timeout e erro de rede também passam pro próximo modelo
-        const action = e instanceof GeminiFailure ? e.action : "next";
-        if (action === "stop") throw failed();
-        if (action === "next" || attempt >= RETRY_WAITS_MS.length) break;
+        const action = e instanceof GeminiFailure ? e.action : "next"; // timeout e erro de rede passam a vez
+        if (action === "stop") stop = true;
+        if (action !== "retry" || attempt >= RETRY_WAITS_MS.length) throw e;
         await new Promise((r) => setTimeout(r, RETRY_WAITS_MS[attempt]));
       }
     }
   }
-  throw failed();
+
+  return new Promise((resolve, reject) => {
+    let next = 0;
+    let running = 0;
+    let settled = false;
+    let hedge: ReturnType<typeof setTimeout> | undefined;
+    const settle = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(hedge);
+      race.abort();
+      fn();
+    };
+    const giveUpIfIdle = () => {
+      if (running === 0 && (stop || next >= models.length || left() < GEMINI_MIN_ATTEMPT_MS)) settle(() => reject(failed()));
+    };
+    const launch = () => {
+      clearTimeout(hedge);
+      if (settled || stop || next >= models.length || left() < GEMINI_MIN_ATTEMPT_MS || running >= GEMINI_MAX_PARALLEL) return giveUpIfIdle();
+      const model = models[next++];
+      running++;
+      runModel(model).then(
+        (result) => settle(() => resolve({ result, model })),
+        () => {
+          running--;
+          if (settled) return;
+          launch(); // o modelo desistiu: o próximo entra na hora
+          giveUpIfIdle();
+        }
+      );
+      // sem resposta em GEMINI_HEDGE_MS, o próximo modelo entra em paralelo
+      hedge = setTimeout(launch, GEMINI_HEDGE_MS);
+    };
+    launch();
+  });
 }
 
 const strList = (v: unknown, max: number) => (Array.isArray(v) ? v.filter((s): s is string => typeof s === "string" && !!s.trim()).slice(0, max) : []);

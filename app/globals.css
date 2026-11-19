@@ -794,6 +794,35 @@ footer{ margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--line); 
 .rp-client-scroll{ max-height: 360px; overflow: auto; scrollbar-color: var(--line) transparent; }
 .rp-client-scroll td:first-child{ white-space: normal; }
 
+/* TICKETS RESOLVIDOS NA SEMANA (/resolvidos) */
+.rs-kpis{ grid-template-columns: repeat(4, 1fr); }
+.rs-cats{ display:flex; flex-wrap: wrap; gap: 8px; align-content: flex-start; }
+.rs-cat{
+  display:inline-flex; align-items:center; gap: 8px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--panel-2); color: var(--text); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.rs-cat b{ font-family:'IBM Plex Mono', monospace; font-size: 11.5px; color: var(--text-dim); }
+.rs-cat:hover{ border-color: var(--accent); }
+.rs-cat.on{ border-color: var(--accent); background: rgba(91,168,245,0.12); }
+.rs-cat.none{ color: var(--text-faint); border-style: dashed; }
+.rs-cat.small{ padding: 2px 8px; font-size: 11.5px; white-space: nowrap; }
+.rs-plain{ text-decoration: none; color: inherit; }
+.rs-filters{ display:flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; border-bottom: 1px solid var(--line); }
+.rs-filters .field.grow{ flex: 1 1 240px; }
+.rs-filters .field select{ max-width: 220px; }
+.rs-list td{ vertical-align: top; }
+.rs-list td.rs-sum{ white-space: normal; min-width: 320px; max-width: 560px; }
+.rs-list td.rs-wrap{ white-space: normal; min-width: 120px; max-width: 200px; }
+.rs-title{ font-weight: 600; }
+.rs-ai{ margin-top: 3px; color: var(--text-dim); line-height: 1.5; }
+.rs-sum .tk-badge{ margin-top: 6px; display:inline-block; }
+@media (max-width: 1100px) and (min-width: 981px){
+  .rs-kpis .tk-kpi:nth-child(4){ border-left: 1px solid var(--line); border-top: 0; }
+}
+@media (max-width: 980px){
+  .rs-kpis{ grid-template-columns: repeat(2, 1fr); }
+}
+
 /* FUNDO ANIMADO no estilo da logo (components/BrandBackground.tsx) */
 .brand-bg{ position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; background: #14171d; }
 .brand-bg svg{ position: absolute; inset: -6%; width: 112%; height: 112%; }

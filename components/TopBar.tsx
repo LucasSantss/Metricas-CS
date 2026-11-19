@@ -15,6 +15,7 @@ const NAV = [
   { href: "/tickets", icon: "ticket", title: "Painel de tickets" },
   { href: "/relatorio-tickets", icon: "file-chart-line", title: "Relatório semanal de tickets" },
   { href: "/relatorio-ka", icon: "crown", title: "Relatório semanal de tickets KA" },
+  { href: "/resolvidos", icon: "check-circle", title: "Tickets resolvidos na semana" },
   // aba temporária, só de administradores (components/ConversationsView.tsx, lib/admin.ts)
   { href: "/conversas", icon: "comments", title: "Conversas — Esperando, Atendimentos e Automático (temporária)", adminOnly: true },
 ];

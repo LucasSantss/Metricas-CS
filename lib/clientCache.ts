@@ -13,6 +13,8 @@ export const CACHE_TTL = {
   percentiles: 15 * 60 * 1000,
   /** Relatório de tickets: lista de semanas e relatório salvo (gerado 1x por dia) */
   ticketReports: 5 * 60 * 1000,
+  /** Resolvidos na semana: números ao vivo do bot (mesmo ritmo do Painel) + textos salvos */
+  resolved: 2 * 60 * 1000,
   /** Ajustes e setores, usados por todas as telas */
   config: 5 * 60 * 1000,
 } as const;

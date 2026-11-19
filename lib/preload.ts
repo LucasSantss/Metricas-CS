@@ -12,7 +12,7 @@ import { readAttendantFilter } from "./attendantFilter";
 import { isFresh, readReportCache, writeReportCache } from "./reportCache";
 import { CACHE_TTL, cachedJson } from "./clientCache";
 
-const ROUTES = ["/", "/percentis", "/tickets", "/relatorio-tickets", "/relatorio-ka"] as const;
+const ROUTES = ["/", "/percentis", "/tickets", "/relatorio-tickets", "/relatorio-ka", "/resolvidos"] as const;
 type Router = { prefetch: (href: string) => void };
 
 const pad = (n: number) => String(n).padStart(2, "0");

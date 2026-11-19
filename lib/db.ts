@@ -136,6 +136,31 @@ export async function ensureSchema() {
   await sql`
     CREATE TABLE IF NOT EXISTS ticket_reports_ka (LIKE ticket_reports INCLUDING ALL)
   `;
+  // Tickets resolvidos na semana (/resolvidos): resumo e categoria da IA por ticket, e a visão geral por semana e recorte
+  await sql`
+    CREATE TABLE IF NOT EXISTS ticket_summaries (
+      ticket_id TEXT PRIMARY KEY,
+      input_hash TEXT NOT NULL,
+      resumo TEXT NOT NULL,
+      categoria TEXT NOT NULL,
+      model TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS resolved_overviews (
+      week_start DATE NOT NULL,
+      segment TEXT NOT NULL,
+      generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      partial BOOLEAN NOT NULL DEFAULT false,
+      ticket_count INT NOT NULL DEFAULT 0,
+      ai JSONB,
+      ai_error TEXT,
+      model TEXT,
+      ai_input_hash TEXT,
+      PRIMARY KEY (week_start, segment)
+    )
+  `;
   await sql`
     CREATE TABLE IF NOT EXISTS admins (
       email TEXT PRIMARY KEY,
@@ -423,4 +448,86 @@ export async function deleteAdmin(email: string) {
   const sql = getSql();
   await ensureSchema();
   await sql`DELETE FROM admins WHERE email = ${email.toLowerCase()}`;
+}
+
+/* ---------- tickets resolvidos na semana (/resolvidos) ---------- */
+
+export type TicketSummaryRow = { ticketId: string; inputHash: string; resumo: string; categoria: string; model: string | null };
+
+export async function getTicketSummaries(ids: string[]): Promise<Map<string, TicketSummaryRow>> {
+  if (!ids.length) return new Map();
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql(`SELECT ticket_id, input_hash, resumo, categoria, model FROM ticket_summaries WHERE ticket_id = ANY($1::text[])`, [ids]);
+  return new Map(
+    (rows as any[]).map((r) => [r.ticket_id, { ticketId: r.ticket_id, inputHash: r.input_hash, resumo: r.resumo, categoria: r.categoria, model: r.model }])
+  );
+}
+
+export async function saveTicketSummaries(items: TicketSummaryRow[]) {
+  if (!items.length) return;
+  const sql = getSql();
+  await ensureSchema();
+  await sql(
+    `INSERT INTO ticket_summaries (ticket_id, input_hash, resumo, categoria, model, updated_at)
+     SELECT *, now() FROM unnest($1::text[], $2::text[], $3::text[], $4::text[], $5::text[])
+     ON CONFLICT (ticket_id) DO UPDATE SET
+       input_hash = EXCLUDED.input_hash, resumo = EXCLUDED.resumo, categoria = EXCLUDED.categoria,
+       model = EXCLUDED.model, updated_at = now()`,
+    [items.map((i) => i.ticketId), items.map((i) => i.inputHash), items.map((i) => i.resumo), items.map((i) => i.categoria), items.map((i) => i.model)]
+  );
+}
+
+/** Categorias já usadas, das mais frequentes pras menos — a IA reaproveita os nomes. */
+export async function listSummaryCategories(limit = 40): Promise<string[]> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql(`SELECT categoria FROM ticket_summaries GROUP BY categoria ORDER BY count(*) DESC LIMIT $1`, [limit]);
+  return (rows as any[]).map((r) => r.categoria);
+}
+
+export type ResolvedOverviewRow = {
+  weekStart: string;
+  segment: string;
+  generatedAt: string;
+  partial: boolean;
+  ticketCount: number;
+  ai: unknown | null;
+  aiError: string | null;
+  model: string | null;
+  aiInputHash: string | null;
+};
+
+export async function getResolvedOverviews(weekStart: string): Promise<ResolvedOverviewRow[]> {
+  const sql = getSql();
+  await ensureSchema();
+  const rows = await sql(
+    `SELECT week_start::text AS week_start, segment, generated_at, partial, ticket_count, ai, ai_error, model, ai_input_hash
+     FROM resolved_overviews WHERE week_start = $1`,
+    [weekStart]
+  );
+  return (rows as any[]).map((r) => ({
+    weekStart: r.week_start,
+    segment: r.segment,
+    generatedAt: new Date(r.generated_at).toISOString(),
+    partial: r.partial,
+    ticketCount: r.ticket_count,
+    ai: r.ai,
+    aiError: r.ai_error,
+    model: r.model,
+    aiInputHash: r.ai_input_hash ?? null,
+  }));
+}
+
+export async function saveResolvedOverview(r: Omit<ResolvedOverviewRow, "generatedAt">) {
+  const sql = getSql();
+  await ensureSchema();
+  await sql(
+    `INSERT INTO resolved_overviews (week_start, segment, generated_at, partial, ticket_count, ai, ai_error, model, ai_input_hash)
+     VALUES ($1, $2, now(), $3, $4, $5::jsonb, $6, $7, $8)
+     ON CONFLICT (week_start, segment) DO UPDATE SET
+       generated_at = now(), partial = EXCLUDED.partial, ticket_count = EXCLUDED.ticket_count, ai = EXCLUDED.ai,
+       ai_error = EXCLUDED.ai_error, model = EXCLUDED.model, ai_input_hash = EXCLUDED.ai_input_hash`,
+    [r.weekStart, r.segment, r.partial, r.ticketCount, r.ai == null ? null : JSON.stringify(r.ai), r.aiError, r.model, r.aiInputHash]
+  );
 }

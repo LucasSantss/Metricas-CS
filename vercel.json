@@ -1,6 +1,7 @@
 {
   "crons": [
     { "path": "/api/ticket-reports/cron", "schedule": "0 12 * * *" },
-    { "path": "/api/ticket-reports/cron/ka", "schedule": "30 12 * * *" }
+    { "path": "/api/ticket-reports/cron/ka", "schedule": "30 12 * * *" },
+    { "path": "/api/ticket-reports/cron/resolvidos", "schedule": "0 13 * * *" }
   ]
 }
