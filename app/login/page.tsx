@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
-import { ALLOWED_DOMAIN, auth, isAllowedEmail, signIn } from "@/auth";
+import { ALLOWED_DOMAINS_LABEL, auth, isAllowedEmail, signIn } from "@/auth";
 
 export const metadata = { title: "Entrar · Termômetro Operacional" };
 
 const ERRORS: Record<string, string> = {
-  AccessDenied: `Acesso permitido só para contas @${ALLOWED_DOMAIN}.`,
+  AccessDenied: `Acesso permitido só para contas ${ALLOWED_DOMAINS_LABEL}.`,
 };
 
 // só caminhos internos, pra o callbackUrl não virar redirecionamento pra fora
@@ -25,7 +25,7 @@ export default async function LoginPage({
     <div className="login-wrap">
       <div className="login-card">
         <div className="login-title">Termômetro Operacional</div>
-        <div className="login-sub">Entre com sua conta Google @{ALLOWED_DOMAIN}</div>
+        <div className="login-sub">Entre com sua conta Google {ALLOWED_DOMAINS_LABEL}</div>
         {error && <div className="login-error">{ERRORS[error] ?? "Não foi possível entrar. Tente novamente."}</div>}
         <form
           action={async () => {

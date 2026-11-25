@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ALLOWED_DOMAIN, isAllowedEmail } from "@/auth";
+import { ALLOWED_DOMAINS_LABEL, isAllowedEmail } from "@/auth";
 import { deleteAdmin, insertAdmin, listAdminRows } from "@/lib/db";
 import { SUPER_ADMIN, currentAdmin } from "@/lib/admin";
 import { errorJson } from "@/lib/security";
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
     const email = String(body.email ?? "").trim().toLowerCase();
     // só contas do domínio conseguem entrar na plataforma (auth.ts)
     if (!/^[^\s@]+@[^\s@]+$/.test(email) || !isAllowedEmail(email)) {
-      return NextResponse.json({ error: `Informe um e-mail @${ALLOWED_DOMAIN}.` }, { status: 400 });
+      return NextResponse.json({ error: `Informe um e-mail ${ALLOWED_DOMAINS_LABEL}.` }, { status: 400 });
     }
     if (email !== SUPER_ADMIN) await insertAdmin(email, me);
     return NextResponse.json({ ok: true });

@@ -70,7 +70,7 @@ export default function AdminsSettings() {
         </span>
       </div>
       <div className="hint">
-        Os demais usuários @chatbotmaker.io continuam vendo o Termômetro, Percentis, Painel e Relatório de tickets. A mudança vale no próximo
+        Os demais usuários @chatbotmaker.io e @rdstation.com continuam vendo o Termômetro, Percentis, Painel e Relatório de tickets. A mudança vale no próximo
         carregamento da página de quem foi adicionado ou removido.
       </div>
       {error && <div className="error-box">{error}</div>}
