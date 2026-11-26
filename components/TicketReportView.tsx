@@ -5,6 +5,7 @@ import TopBar from "./TopBar";
 import SettingsModal from "./SettingsModal";
 import SettingsPanel from "./SettingsPanel";
 import KaIndicators from "./KaIndicators";
+import ResolvedSummaries from "./ResolvedSummaries";
 import type { ConfigResponse, DepartmentDto } from "@/lib/types";
 import type { ReportSegment } from "@/lib/db";
 import type { ReportAi, ReportData, ReportTheme, WeekTotals } from "@/lib/ticketReport";
@@ -387,6 +388,8 @@ export default function TicketReportView({ segment = "all" }: { segment?: Report
                 note="Comentários e eventos dos tickets ainda não são considerados: a SoftCS não os disponibiliza para o bot por enquanto."
               />
             )}
+
+            <ResolvedSummaries week={week} segment={isKa ? "ka" : "all"} />
 
             {ai && (ai.riscos.length > 0 || ai.recomendacoes.length > 0) && (
               <div className="tk-grid2">
